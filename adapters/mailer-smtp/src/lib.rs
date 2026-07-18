@@ -239,8 +239,8 @@ mod tests {
         assert!(formatted.contains("evt-1@boson"));
     }
 
-    #[test]
-    fn builds_starttls_transport() {
+    #[tokio::test]
+    async fn builds_starttls_transport() {
         let config = MailConfig {
             provider: "smtp".into(),
             host: "smtp.example.com".into(),
@@ -251,6 +251,7 @@ mod tests {
             from: "Boson <no-reply@example.com>".into(),
             ..MailConfig::default()
         };
+        // Construction is sync, but Drop of lettre's async pool needs a runtime.
         let mailer = SmtpMailer::from_config(&config).unwrap();
         assert_eq!(mailer.host, "smtp.example.com");
     }
