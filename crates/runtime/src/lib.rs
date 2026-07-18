@@ -18,7 +18,8 @@ use axum::{
 };
 use boson_admin::{AdminAuth, AdminCapability};
 use boson_audit::AuditCapability;
-use boson_capability::{CapabilityRegistry, MigrationSet};
+use boson_capability::MigrationSet;
+pub use boson_capability::{Capability, CapabilityRegistry};
 use boson_database_inspection::DatabaseInspectionCapability;
 use boson_db::{Database, PostgresInspector};
 use boson_event_log::EventsCapability;
@@ -30,14 +31,20 @@ use boson_kernel::{
     MailConfig, PlatformConfig, QueueConfig, RequestContext, StorageConfig, init_telemetry,
 };
 use boson_mailer_local::LocalMailer;
+use boson_mailer_smtp::SmtpMailer;
 use boson_notifications::NotificationsCapability;
 use boson_ops::{OpsCapability, OpsState, RequestTrace};
 use boson_organizations::OrganizationsCapability;
 use boson_ports::{DatabaseInspector, Mailer, ObjectStore, Queue};
 use boson_queue_postgres::PostgresQueue;
 use boson_storage_local::LocalObjectStore;
+use boson_storage_s3::S3ObjectStore;
 use serde_json::{Value, json};
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tower_http::{
+    cors::CorsLayer,
+    services::{ServeDir, ServeFile},
+    trace::TraceLayer,
+};
 
 /// Services available to application extension callbacks.
 #[derive(Clone)]
@@ -60,7 +67,7 @@ pub struct Builder {
     /// Optional override for core migrations. When unset, embedded platform
     /// migrations compiled into this crate are used.
     core_migrations: Option<PathBuf>,
-    extension: Option<ExtensionCallback>,
+    extensions: Vec<ExtensionCallback>,
 }
 
 impl Default for Builder {
@@ -69,7 +76,7 @@ impl Default for Builder {
             config_path: env::var("BOSON_CONFIG")
                 .map_or_else(|_| PathBuf::from(".boson/config.yaml"), PathBuf::from),
             core_migrations: None,
-            extension: None,
+            extensions: Vec::new(),
         }
     }
 }
@@ -97,13 +104,38 @@ impl Builder {
         self
     }
 
+    /// Appends an application installer. Multiple calls accumulate in order.
     #[must_use]
-    pub fn extend<F>(mut self, extension: F) -> Self
+    pub fn register<F>(mut self, installer: F) -> Self
     where
         F: FnOnce(&RuntimeContext, &mut CapabilityRegistry) -> Result<()> + Send + 'static,
     {
-        self.extension = Some(Box::new(extension));
+        self.extensions.push(Box::new(installer));
         self
+    }
+
+    /// Builds and registers one capability.
+    #[must_use]
+    pub fn capability<F>(self, build: F) -> Self
+    where
+        F: FnOnce(&RuntimeContext) -> Result<Arc<dyn Capability>> + Send + 'static,
+    {
+        self.register(move |ctx, registry| {
+            registry.register(build(ctx)?)?;
+            Ok(())
+        })
+    }
+
+    /// Appends an application installer.
+    ///
+    /// Prefer [`Builder::register`]. This alias is retained for compatibility
+    /// and accumulates rather than overwriting earlier installers.
+    #[must_use]
+    pub fn extend<F>(self, extension: F) -> Self
+    where
+        F: FnOnce(&RuntimeContext, &mut CapabilityRegistry) -> Result<()> + Send + 'static,
+    {
+        self.register(extension)
     }
 
     /// Applies core and capability-owned migrations.
@@ -212,7 +244,7 @@ impl Builder {
             queue: queue.clone(),
         };
 
-        if let Some(extension) = self.extension.take() {
+        for extension in self.extensions.drain(..) {
             extension(&context, &mut capabilities)?;
         }
 
@@ -261,9 +293,14 @@ impl PreparedRuntime {
             admin_auth: self.admin_auth,
             ops: self.ops,
         };
-        let app = build_router(state, &self.capabilities);
+        let dashboard_dir = (!self.config.http.dashboard_dir.trim().is_empty())
+            .then(|| PathBuf::from(&self.config.http.dashboard_dir));
+        let app = build_router(state, &self.capabilities, dashboard_dir.as_deref());
         let listener = tokio::net::TcpListener::bind(&address).await?;
         tracing::info!(%address, "Boson server listening");
+        if let Some(dir) = &dashboard_dir {
+            tracing::info!(dashboard_dir = %dir.display(), "serving Dashboard assets");
+        }
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown_signal())
             .await?;
@@ -391,23 +428,39 @@ struct AppState {
     ops: OpsState,
 }
 
-fn build_router(state: AppState, capabilities: &CapabilityRegistry) -> Router {
+fn build_router(
+    state: AppState,
+    capabilities: &CapabilityRegistry,
+    dashboard_dir: Option<&Path>,
+) -> Router {
     let admin = capabilities
         .admin_router()
         .route_layer(middleware::from_fn_with_state(state.clone(), require_admin));
-    let core = Router::new()
-        .route("/", get(root))
+    let mut core = Router::new()
         .route("/healthz", get(liveness))
-        .route("/readyz", get(readiness))
-        .with_state(state.clone());
+        .route("/readyz", get(readiness));
+    if dashboard_dir.is_none() {
+        core = core.route("/", get(root));
+    }
+    let core = core.with_state(state.clone());
 
-    Router::new()
+    let mut router = Router::new()
         .merge(core)
         .nest("/v1", capabilities.app_router())
         .nest("/admin/v1", admin)
         .layer(middleware::from_fn_with_state(state, trace_request))
         .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive())
+        .layer(CorsLayer::permissive());
+
+    if let Some(dir) = dashboard_dir {
+        let index = dir.join("index.html");
+        let serve = ServeDir::new(dir)
+            .append_index_html_on_directories(true)
+            .not_found_service(ServeFile::new(index));
+        router = router.fallback_service(serve);
+    }
+
+    router
 }
 
 async fn root() -> Json<Value> {
@@ -510,7 +563,12 @@ async fn build_object_store(storage: &StorageConfig) -> Result<Arc<dyn ObjectSto
                 .context("open local object store root")?;
             Ok(Arc::new(store))
         }
-        other => bail!("unsupported storage.provider `{other}`; only `local` is supported"),
+        "s3" => {
+            let store = S3ObjectStore::from_config(storage)
+                .context("configure S3-compatible object store")?;
+            Ok(Arc::new(store))
+        }
+        other => bail!("unsupported storage.provider `{other}`; supported providers: local, s3"),
     }
 }
 
@@ -521,7 +579,10 @@ async fn build_mailer(config: &MailConfig) -> Result<Arc<dyn Mailer>> {
                 .await
                 .context("open local mailbox")?,
         )),
-        other => bail!("unsupported mail.provider `{other}`; only `local` is supported"),
+        "smtp" => Ok(Arc::new(
+            SmtpMailer::from_config(config).context("configure SMTP mailer")?,
+        )),
+        other => bail!("unsupported mail.provider `{other}`; supported providers: local, smtp"),
     }
 }
 
@@ -684,6 +745,17 @@ async fn shutdown_signal() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn register_accumulates_installers() {
+        let mut builder = Builder::new();
+        assert!(builder.extensions.is_empty());
+        builder = builder
+            .register(|_ctx, _registry| Ok(()))
+            .extend(|_ctx, _registry| Ok(()))
+            .capability(|_ctx| bail!("capability builders are only invoked during prepare"));
+        assert_eq!(builder.extensions.len(), 3);
+    }
 
     #[test]
     fn core_migrations_are_embedded_in_release_order() {

@@ -1,0 +1,26 @@
+[package]
+name = "boson-mailer-smtp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1.89"
+boson-kernel = { version = "0.1.0", path = "../../crates/kernel" }
+boson-ports = { version = "0.1.0", path = "../../crates/ports" }
+lettre = { version = "0.11.22", default-features = false, features = [
+    "smtp-transport",
+    "builder",
+    "pool",
+    "hostname",
+    "tokio1",
+    "tokio1-rustls-tls",
+] }
+tokio = { version = "1.53.0", features = ["time"] }
+
+[dev-dependencies]
+tokio = { version = "1.53.0", features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

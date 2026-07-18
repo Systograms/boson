@@ -1,0 +1,21 @@
+[package]
+name = "boson-storage-s3"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1.89"
+boson-kernel = { version = "0.1.0", path = "../../crates/kernel" }
+boson-ports = { version = "0.1.0", path = "../../crates/ports" }
+bytes = "1.12.1"
+reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls"] }
+rusty-s3 = "0.7.0"
+url = "2.5.8"
+
+[dev-dependencies]
+tokio = { version = "1.53.0", features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

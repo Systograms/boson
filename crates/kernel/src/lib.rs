@@ -79,16 +79,14 @@ impl PlatformConfig {
             );
         }
         if let Some(storage) = value.get_mut("storage").and_then(|v| v.as_object_mut()) {
-            storage.insert(
-                "local_root".into(),
-                serde_json::Value::String("[REDACTED]".into()),
-            );
+            for field in ["local_root", "access_key_id", "secret_access_key"] {
+                storage.insert(field.into(), serde_json::Value::String("[REDACTED]".into()));
+            }
         }
         if let Some(mail) = value.get_mut("mail").and_then(|v| v.as_object_mut()) {
-            mail.insert(
-                "local_root".into(),
-                serde_json::Value::String("[REDACTED]".into()),
-            );
+            for field in ["local_root", "username", "password"] {
+                mail.insert(field.into(), serde_json::Value::String("[REDACTED]".into()));
+            }
         }
         value
     }
@@ -135,6 +133,9 @@ impl Default for AppConfig {
 pub struct HttpConfig {
     pub host: String,
     pub port: u16,
+    /// Optional directory of built Dashboard assets served by the Server.
+    /// Empty disables static serving. Packaging may populate this path.
+    pub dashboard_dir: String,
 }
 
 impl Default for HttpConfig {
@@ -142,6 +143,7 @@ impl Default for HttpConfig {
         Self {
             host: "0.0.0.0".into(),
             port: 8080,
+            dashboard_dir: String::new(),
         }
     }
 }
@@ -261,12 +263,24 @@ impl Default for AuthConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct StorageConfig {
-    /// Object store provider. Only `local` is supported today.
+    /// Object store provider: `local` or `s3`.
     pub provider: String,
     /// Root directory used by the local provider. Redacted in Admin output.
     pub local_root: String,
     /// Reserved for providers that mint browser-facing URLs.
     pub public_base_url: String,
+    /// Custom S3 endpoint URL (for example MinIO). Empty uses the AWS default.
+    pub endpoint: String,
+    /// S3 region.
+    pub region: String,
+    /// S3 bucket receiving platform objects.
+    pub bucket: String,
+    /// S3 access key. Redacted in Admin output.
+    pub access_key_id: String,
+    /// S3 secret key. Redacted in Admin output.
+    pub secret_access_key: String,
+    /// Use path-style addressing (required by MinIO and most S3-compatibles).
+    pub force_path_style: bool,
 }
 
 /// Durable background queue settings selected by each composition root.
@@ -296,7 +310,7 @@ impl Default for QueueConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct MailConfig {
-    /// Mail provider. Only `local` is supported today.
+    /// Mail provider: `local` or `smtp`.
     pub provider: String,
     /// Sender stamped on platform email.
     pub from: String,
@@ -304,6 +318,16 @@ pub struct MailConfig {
     pub local_root: String,
     /// Browser-facing application URL used to construct action links.
     pub public_app_url: String,
+    /// SMTP relay host.
+    pub host: String,
+    /// SMTP relay port. 587 pairs with `starttls`, 465 with `tls`.
+    pub port: u16,
+    /// SMTP username. Redacted in Admin output. Empty disables authentication.
+    pub username: String,
+    /// SMTP password. Redacted in Admin output.
+    pub password: String,
+    /// Transport security: `starttls` (default), `tls`, or `none`.
+    pub tls: String,
 }
 
 impl Default for MailConfig {
@@ -313,6 +337,11 @@ impl Default for MailConfig {
             from: "Boson <no-reply@localhost>".into(),
             local_root: "data/mail".into(),
             public_app_url: "http://localhost:3000".into(),
+            host: String::new(),
+            port: 587,
+            username: String::new(),
+            password: String::new(),
+            tls: "starttls".into(),
         }
     }
 }
@@ -323,6 +352,12 @@ impl Default for StorageConfig {
             provider: "local".into(),
             local_root: "data/storage".into(),
             public_base_url: String::new(),
+            endpoint: String::new(),
+            region: String::new(),
+            bucket: String::new(),
+            access_key_id: String::new(),
+            secret_access_key: String::new(),
+            force_path_style: false,
         }
     }
 }
@@ -394,7 +429,11 @@ mod tests {
         assert_eq!(redacted["admin"]["bootstrap_token"], "[REDACTED]");
         assert_eq!(redacted["auth"]["jwt_secret"], "[REDACTED]");
         assert_eq!(redacted["storage"]["local_root"], "[REDACTED]");
+        assert_eq!(redacted["storage"]["access_key_id"], "[REDACTED]");
+        assert_eq!(redacted["storage"]["secret_access_key"], "[REDACTED]");
         assert_eq!(redacted["mail"]["local_root"], "[REDACTED]");
+        assert_eq!(redacted["mail"]["username"], "[REDACTED]");
+        assert_eq!(redacted["mail"]["password"], "[REDACTED]");
     }
 
     #[test]
@@ -402,6 +441,17 @@ mod tests {
         let storage = StorageConfig::default();
         assert_eq!(storage.provider, "local");
         assert!(!storage.local_root.is_empty());
+        assert!(!storage.force_path_style);
+        assert!(storage.bucket.is_empty());
+    }
+
+    #[test]
+    fn mail_defaults_prefer_starttls() {
+        let mail = MailConfig::default();
+        assert_eq!(mail.provider, "local");
+        assert_eq!(mail.port, 587);
+        assert_eq!(mail.tls, "starttls");
+        assert!(mail.host.is_empty());
     }
 
     #[test]

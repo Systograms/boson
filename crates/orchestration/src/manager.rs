@@ -215,18 +215,22 @@ impl LifecycleManager {
     }
 
     fn prepare_local_resources(&self, state: &mut LifecycleState) -> Result<()> {
-        for (name, path) in [
-            (
+        let mut resources = Vec::new();
+        if self.project.config.storage.provider == "local" {
+            resources.push((
                 "storage",
                 self.project
                     .root
                     .join(&self.project.config.storage.local_root),
-            ),
-            (
+            ));
+        }
+        if self.project.config.mail.provider == "local" {
+            resources.push((
                 "mail",
                 self.project.root.join(&self.project.config.mail.local_root),
-            ),
-        ] {
+            ));
+        }
+        for (name, path) in resources {
             fs::create_dir_all(&path)
                 .with_context(|| format!("create local {name} directory {}", path.display()))?;
             println!("[{name}] ready at {}", path.display());
