@@ -132,11 +132,9 @@ export default function HomePage() {
               className="w-full max-w-lg justify-self-center lg:justify-self-end"
               lines={[
                 { kind: "command", text: "boson start" },
-                { kind: "output", text: "[postgres] ready" },
-                { kind: "output", text: "[migrate] all migrations applied" },
+                { kind: "output", text: "[migrate] migrations current" },
                 { kind: "output", text: "[server] http://localhost:8080" },
                 { kind: "output", text: "[worker] started" },
-                { kind: "output", text: "[dashboard] http://localhost:3000" },
                 { kind: "blank" },
                 { kind: "output", text: "[boson] running · press Ctrl+C to stop" },
               ]}
@@ -217,7 +215,7 @@ export default function HomePage() {
             </div>
             <div className="rounded-xl border border-border bg-muted/40 p-6 sm:p-8">
               <div className="space-y-3">
-                <DiagramRow label="Clients" items={["Dashboard", "CLI"]} />
+                <DiagramRow label="Clients" items={["Dashboard", "CLI", "JS SDK"]} />
                 <DiagramArrow label="Admin API" />
                 <DiagramRow label="Apps" items={["Server", "Worker"]} />
                 <DiagramArrow label="contracts" />
@@ -245,14 +243,16 @@ export default function HomePage() {
               title="quickstart"
               className="order-2 w-full max-w-lg justify-self-center lg:order-1 lg:justify-self-start"
               lines={[
-                { kind: "command", text: "boson init my-app && cd my-app" },
+                {
+                  kind: "command",
+                  text: "boson create my-app --database-url postgres://...",
+                },
                 { kind: "output", text: "created Boson app `my-app`" },
                 { kind: "blank" },
-                { kind: "command", text: "boson start" },
-                { kind: "output", text: "[postgres] ready" },
-                { kind: "output", text: "[migrate] all migrations applied" },
+                { kind: "command", text: "boson doctor && boson start" },
+                { kind: "output", text: "[database] PostgreSQL connection is healthy" },
+                { kind: "output", text: "[migrate] migrations current" },
                 { kind: "output", text: "[server] http://localhost:8080" },
-                { kind: "output", text: "[dashboard] http://localhost:3000" },
               ]}
             />
             <div className="order-1 lg:order-2">
@@ -260,12 +260,13 @@ export default function HomePage() {
                 Quickstart
               </p>
               <h2 className="mt-3 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-                From clone to running platform in one command
+                Create, connect, and start
               </h2>
               <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-                The Boson CLI validates your machine, starts managed
-                infrastructure, applies migrations, launches every process,
-                waits for health, and streams one unified log.
+                Point Boson at infrastructure you own, verify connectivity with
+                doctor, then start Server and Worker. Boson applies migrations
+                and streams one unified log without provisioning databases or
+                cloud resources.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Button asChild>

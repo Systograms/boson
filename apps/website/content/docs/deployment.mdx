@@ -1,55 +1,78 @@
 ---
 title: Deployment
-description: Packaging the server, worker, and dashboard separately from the website.
-order: 11
+description: Package migrate, Server, and Worker against infrastructure you own.
+order: 12
 ---
 
-Deployment packaging must not leak into application logic. The server and
-worker are containerized from the Rust workspace; the dashboard has its own
-static image. This website deploys independently on Vercel.
+Deployment packaging must not leak into application logic. Use `boson deploy`
+to emit portable container images for migrate, Server, and Worker. Boson never
+provisions databases, buckets, mail providers, registries, or cloud services.
 
-## Local lifecycle
+## Package an application
 
 ```bash
-boson start
+boson deploy
+boson deploy --tag ghcr.io/acme/my-app:0.1.0 --build
+boson deploy --tag ghcr.io/acme/my-app:0.1.0 --push
 ```
 
-The CLI builds and supervises the project's migrate, Server, and Worker
-binaries. It connects to infrastructure supplied through configuration and
-never creates or stops that infrastructure.
+This writes `.boson/deploy/Dockerfile`, `.dockerignore`, and `CLOUD_RUN.md`
+(override the directory with `--output`). The multi-stage Dockerfile builds
+three targets from the packages named in `.boson/project.toml`:
 
-Press Ctrl+C or run `boson stop` from another terminal for graceful shutdown.
+| Target | Image suffix | Role |
+| --- | --- | --- |
+| `server` | `-server` | Public and Admin HTTP |
+| `worker` | `-worker` | Jobs and event consumers |
+| `migrate` | `-migrate` | One-shot migration Job |
+
+`--push` implies `--build`. Runtime images copy `capabilities/` (so capability
+migrations travel with the app) and `.boson/config.yaml`; platform migrations
+are already embedded in `boson-runtime`. Inject production secrets at deploy
+time — do not bake them into the image.
 
 ## Production boundaries
 
 Production packaging deploys independent units:
 
-- Server owns public and Admin HTTP traffic.
+- Server owns public and Admin HTTP traffic, and may optionally serve Dashboard
+  assets from `http.dashboard_dir`.
 - Worker owns background jobs and event consumers.
 - The migrate binary carries embedded platform migrations and applies them,
   followed by application capability migrations, before rollout.
-- Dashboard is a static Admin API client.
+- Dashboard may be served by the Server (same origin) or deployed as a separate
+  static Admin API client.
 
-Production orchestration should run migrations explicitly, deploy Server and
-Worker separately, and provide PostgreSQL plus the configured port adapters.
+Provide PostgreSQL plus the configured port adapters (`storage.provider`,
+`mail.provider`, `queue.provider`).
 
-## Dashboard runtime configuration
+## Cloud Run guidance
 
-The Dashboard ships as a reusable image:
+Typical shape:
+
+1. Run the migrate image once as a Job.
+2. Deploy the Server image as an HTTP service (`/healthz`, `/readyz`).
+3. Deploy the Worker image as a long-running service.
+4. Inject `BOSON__DATABASE__URL`, auth secrets, and provider credentials through
+   your secret manager.
+
+Boson does not run `gcloud`, Terraform, or Compose to create those resources.
+
+## Dashboard delivery
+
+Same-origin (recommended when packaging Server with assets):
+
+- Build the Dashboard into a directory
+- Set `http.dashboard_dir` / `BOSON__HTTP__DASHBOARD_DIR`
+- Leave `window.__BOSON_CONFIG__.apiUrl` empty so the client uses the Server origin
+
+Standalone image (optional):
 
 ```text
 ghcr.io/systograms/boson-dashboard:0.1.0
 ```
 
-At runtime, nginx injects `/config.js` from `BOSON_API_URL`:
-
-```js
-window.__BOSON_CONFIG__ = { apiUrl: "http://localhost:8080" }
-```
-
-The Dashboard client reads that value first, then falls back to
-`VITE_BOSON_URL`, then `http://localhost:8080`. Deploy the image in
-developer-owned infrastructure and set `BOSON_API_URL` to the Server origin.
+Inject `/config.js` with `BOSON_API_URL` pointing at the Server.
 
 ## Website on Vercel
 
@@ -60,11 +83,9 @@ Point a Vercel project at this repository with:
 - **Build Command:** `npm run build`
 - **Install Command:** `npm ci`
 
-The marketing/docs site does not depend on the Admin API or Docker Compose.
-
 ## Separation of concerns
 
-- Server / worker images ship from `deploy/`
-- Dashboard ships as a static client of the Admin API
-- Website ships as a standalone Next.js app on Vercel
+- Application images come from `boson deploy`
+- Platform monorepo images live under `deploy/` for Boson itself
+- Dashboard is an Admin API client, not a Compose-managed lifecycle unit
 - Product capabilities depend on `boson-sdk`, not deployment packaging

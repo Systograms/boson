@@ -60,15 +60,15 @@ Generated local configuration typically includes:
 | Section | Purpose |
 | --- | --- |
 | `app` | Application name and environment |
-| `http` | Bind host and port (default `8080`) |
+| `http` | Bind host/port and optional `dashboard_dir` for served Admin UI |
 | `database` | PostgreSQL URL, pool size, connect/migrate flags |
 | `database_inspection` | Optional Admin database browser |
 | `telemetry` | Log level and JSON formatting |
 | `admin` | Bootstrap Admin token |
 | `auth` | JWT issuer, secret, and token TTLs |
-| `storage` | Object-store provider and local root |
+| `storage` | Object-store provider (`local` or `s3`) and credentials |
 | `queue` | Background queue provider and lease settings |
-| `mail` | Mailer provider, from address, and local mailbox |
+| `mail` | Mailer provider (`local` or `smtp`) and credentials |
 | `capabilities.*` | Product-owned settings |
 
 ## Local endpoints
@@ -76,8 +76,8 @@ Generated local configuration typically includes:
 | Service | Default |
 | --- | --- |
 | Server | `http://localhost:8080` |
-| Dashboard | `http://localhost:3000` |
-| PostgreSQL | `localhost:5432` |
+| Dashboard | Served by Server when `http.dashboard_dir` is set |
+| PostgreSQL | Connection from `database.url` (developer-owned) |
 | Admin bootstrap token | `local-development-token` |
 
 Server readiness is gated on `/readyz`. When the Server binds `0.0.0.0` or

@@ -1,6 +1,6 @@
 ---
 title: CLI reference
-description: Create, run, inspect, and update Boson projects.
+description: Create, run, inspect, package, and update Boson projects.
 order: 4
 ---
 
@@ -8,17 +8,19 @@ The `boson` CLI is the public local control plane. Run project commands from
 the project root or any nested directory; Boson discovers
 `.boson/project.toml` by walking upward.
 
-## `boson init`
+## `boson create`
 
-Create a standalone workspace:
+Create a standalone workspace on infrastructure you own:
 
 ```bash
-boson init my-app
-boson init my-app --path ./products/my-app
+boson create my-app
+boson create my-app --database-url postgres://user:pass@localhost:5432/my_app
+boson create my-app --path ./products/my-app
 ```
 
-`--force` allows generated files to be written into a non-empty destination.
-Source and framework details remain hidden from the normal command surface.
+`--database-url` writes the connection string into `.boson/config.yaml`. Boson
+never creates PostgreSQL. `--force` allows generated files to be written into a
+non-empty destination. `boson init` remains a hidden compatibility alias.
 
 ## `boson start`
 
@@ -87,6 +89,25 @@ boson config
 
 Prints the effective typed configuration as formatted JSON with secrets
 redacted.
+
+## `boson deploy`
+
+```bash
+boson deploy
+boson deploy --tag ghcr.io/acme/my-app:0.1.0 --build
+boson deploy --tag ghcr.io/acme/my-app:0.1.0 --push
+boson deploy --output ./packaging
+```
+
+Writes packaging files (Dockerfile, `.dockerignore`, and `CLOUD_RUN.md`) to
+`--output` (default: `.boson/deploy`). Image names are derived from `--tag`
+(or `{project}:{cli-version}` when omitted) with `-server`, `-worker`, and
+`-migrate` suffixes.
+
+`--build` invokes the local Docker CLI for each target. `--push` implies
+`--build` and pushes to the registry encoded in those tags. Plain
+`boson deploy` only writes files and does not require Docker. Boson never
+creates databases, buckets, mail providers, registries, IAM, or cloud services.
 
 ## `boson update`
 

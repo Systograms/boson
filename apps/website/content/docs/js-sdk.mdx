@@ -1,0 +1,63 @@
+---
+title: JavaScript SDK
+description: Use Boson authentication and Admin HTTP APIs from TypeScript.
+order: 9
+---
+
+`@boson/sdk` is a typed, dependency-free HTTP client for modern browsers and
+Node.js 22 or later. It covers end-user authentication under `/v1/auth` and
+provides generic typed helpers for the Admin API. Source lives at
+`packages/js-sdk`.
+
+## Create a client
+
+```ts
+import { createClient, hasScope, BosonApiError } from '@boson/sdk'
+
+const boson = createClient({
+  baseUrl: 'http://localhost:8080',
+  getToken: () => localStorage.getItem('boson.token'),
+  setToken: (token) => localStorage.setItem('boson.token', token),
+})
+```
+
+Optional `getToken` / `setToken` callbacks let each application choose its own
+storage. Pass `fetch` when the global Fetch API is unavailable. The SDK holds
+no token state itself.
+
+## Authentication
+
+```ts
+const session = await boson.auth.login({
+  email: 'person@example.com',
+  password: 'correct-horse-battery',
+})
+
+const user = await boson.auth.me()
+await boson.auth.logout(session.refresh_token)
+```
+
+`register`, `login`, and `refresh` persist the issued access token through
+`setToken`. The auth client also covers email verification request/confirm and
+password-reset request/confirm.
+
+## Admin API
+
+```ts
+type UsersResponse = { data: Array<{ id: string; email: string }> }
+const users = await boson.admin.get<UsersResponse>('users')
+```
+
+`admin.get` and `admin.post` address routes under `/admin/v1`. There are no
+per-resource wrappers — pass the endpoint string and a response type. The
+package ships TypeScript types for common Admin payloads (overview, users,
+jobs, events, audit, database inspector, and more).
+
+## Errors and scopes
+
+API failures throw `BosonApiError` with `status` and `code` when the server
+supplies them. Use `hasScope(principal, 'items:read')` to check Admin scopes
+locally; bootstrap principals and the `*` wildcard always pass.
+
+The package is an HTTP client only. Capability authoring remains a server-side
+concern — see the [Capability SDK](/docs/extensions).

@@ -5,7 +5,7 @@ order: 8
 ---
 
 `examples/my-api` is the reference standalone Boson application. It has the
-exact workspace shape produced by `boson init`, including the starter `items`
+exact workspace shape produced by `boson create`, including the starter `items`
 capability, so it doubles as a living scaffold contract.
 
 ## Run it
@@ -22,7 +22,7 @@ logs. It does not create or stop the database.
 Local endpoints:
 
 - Server: `http://localhost:8080`
-- Dashboard: `http://localhost:3000`
+- Dashboard: optionally served by the Server when `http.dashboard_dir` is set
 - PostgreSQL: `localhost:5432`
 - Admin token: `local-development-token`
 

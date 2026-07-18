@@ -23,27 +23,32 @@ cargo install --git https://github.com/Systograms/boson boson-cli
 ## Scaffold an app
 
 ```bash
-boson init my-app
+boson create my-app --database-url postgres://user:pass@localhost:5432/my_app
 cd my-app
 ```
 
-`boson init` writes a workspace with:
+`boson create` writes a workspace with:
 
 - thin `server`, `worker`, and `migrate` binaries
+- a shared `apps/app` composition crate
 - a starter `items` capability
 - project identity in `.boson/project.toml`
 - typed local configuration in `.boson/config.yaml`
 
-## Start everything
+Boson never creates PostgreSQL. Pass `--database-url` or edit
+`.boson/config.yaml` to point at a database you already run.
+
+## Verify and start
 
 ```bash
+boson doctor
 boson start
 ```
 
-Set the database URL and any provider credentials in `.boson/config.yaml` or
-`BOSON__*` environment variables first. Boson connects to that infrastructure,
-applies pending migrations, starts the Server and Worker, waits for health, and
-streams logs with service prefixes. Press Ctrl+C to stop Boson's processes.
+`boson doctor` checks configuration and PostgreSQL connectivity.
+`boson start` applies pending migrations, starts the Server and Worker, waits
+for health, and streams logs with service prefixes. Press Ctrl+C to stop
+Boson's processes.
 
 Boson never creates or stops PostgreSQL, storage, email, containers, or other
 infrastructure.
@@ -56,15 +61,12 @@ boson logs
 boson logs server --follow
 boson doctor
 boson config
+boson deploy
 boson stop
 ```
 
-`boson doctor` prints specific fixes for missing prerequisites, invalid config,
-occupied ports, and an unreachable configured PostgreSQL database instead of
-raw stack traces. It checks connectivity without creating infrastructure.
-
-`boson config` prints the effective configuration as JSON with secrets
-redacted. `boson status` reports service state, ports, health, and versions.
+`boson deploy` packages migrate, Server, and Worker images. It never provisions
+cloud resources.
 
 ## Update the CLI
 
@@ -72,9 +74,6 @@ redacted. `boson status` reports service state, ports, health, and versions.
 boson update --check
 boson update
 ```
-
-The updater checks the latest GitHub release and installs the matching
-`boson-cli` tag through Cargo.
 
 ## Example application
 

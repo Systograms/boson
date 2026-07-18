@@ -27,22 +27,29 @@ Do not depend on adapter crates or vendor SDKs from a capability.
    writes.
 4. Register `event_consumers()`, `job_handlers()`, and `health_checks()` as
    needed.
-5. Register the capability from server, worker, and migrate binaries through
-   `boson_runtime::Builder::extend`.
+5. Register capabilities from a shared composition module used by migrate,
+   Server, and Worker.
 
 ```rust
+// apps/app/src/lib.rs
+pub fn register_app(ctx: &RuntimeContext, registry: &mut CapabilityRegistry) -> Result<()> {
+    registry.register(Arc::new(ItemsCapability::new(
+        ctx.database.clone(),
+        ctx.identity_auth.clone(),
+        &ctx.config,
+    )?))?;
+    Ok(())
+}
+
+// apps/server/src/main.rs
 boson_runtime::Builder::from_env()
-    .extend(|ctx, registry| {
-        registry.register(Arc::new(TodosCapability::new(
-            ctx.database.clone(),
-            ctx.identity_auth.clone(),
-            &ctx.config,
-        )?))?;
-        Ok(())
-    })
+    .register(my_app_app::register_app)
     .run_server()
     .await
 ```
+
+`Builder::register` and `Builder::capability` accumulate installers in order.
+`Builder::extend` remains as a compatibility alias that also appends.
 
 ## Configuration
 
@@ -50,11 +57,11 @@ Core platform sections remain closed. Capability-owned settings live under:
 
 ```yaml
 capabilities:
-  todos:
-    max_todos: 100
+  items:
+    max_items: 100
 ```
 
-Deserialize with `config.capability_config::<T>("todos")`.
+Deserialize with `config.capability_config::<T>("items")`.
 
 ## Migrations
 
@@ -74,8 +81,9 @@ Bootstrap tokens continue to carry `*`.
 ## Local workflow
 
 ```bash
-boson init my-app
+boson create my-app
 cd my-app
+boson doctor
 boson start
 ```
 
@@ -84,6 +92,6 @@ behind the Boson lifecycle. Use `boson status`, `boson logs`, and
 `boson doctor` when needed. Migrations are applied by the generated migrate
 binary during `boson start`; they are not a separate public CLI command.
 
-For Boson contributors, the hidden `--boson-path` init option can point a
+For Boson contributors, the hidden `--boson-path` create option can point a
 generated app at a local checkout. See `examples/my-api` for a complete
 standalone reference app.
