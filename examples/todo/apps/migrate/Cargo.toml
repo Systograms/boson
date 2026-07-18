@@ -1,0 +1,10 @@
+[package]
+name = "todo_migrate"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow = "1.0.103"
+todo_todos = { path = "../../capabilities/todos" }
+boson-runtime = { version = "0.1.0", path = "../../../../crates/runtime" }
+tokio = { version = "1.53.0", features = ["full"] }

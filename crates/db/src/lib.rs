@@ -56,11 +56,23 @@ impl Database {
         Ok(Self { pool })
     }
 
+    /// Applies migrations from `path` using the default `_sqlx_migrations` table.
     pub async fn migrate(&self, path: impl AsRef<Path>) -> Result<(), DatabaseError> {
-        sqlx::migrate::Migrator::new(path.as_ref())
-            .await?
-            .run(&self.pool)
-            .await?;
+        self.migrate_with_table(path, "_sqlx_migrations").await
+    }
+
+    /// Applies migrations tracked in a dedicated table.
+    ///
+    /// Capability-owned migration directories should use a unique table so they
+    /// do not collide with platform migrations in `_sqlx_migrations`.
+    pub async fn migrate_with_table(
+        &self,
+        path: impl AsRef<Path>,
+        table_name: &str,
+    ) -> Result<(), DatabaseError> {
+        let mut migrator = sqlx::migrate::Migrator::new(path.as_ref()).await?;
+        migrator.dangerous_set_table_name(table_name.to_owned());
+        migrator.run(&self.pool).await?;
         Ok(())
     }
 
@@ -81,6 +93,29 @@ impl Database {
         .bind(&event.correlation_id)
         .bind(event.occurred_at)
         .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Publishes an outbox event inside an existing transaction.
+    ///
+    /// Capabilities should prefer this over raw `kernel.outbox` SQL so domain
+    /// writes and event emission stay atomic.
+    pub async fn publish_in_tx(
+        transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        event: &EventEnvelope,
+    ) -> Result<(), DatabaseError> {
+        sqlx::query(
+            "INSERT INTO kernel.outbox
+             (id, topic, payload, correlation_id, occurred_at)
+             VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(event.id)
+        .bind(&event.topic)
+        .bind(&event.payload)
+        .bind(&event.correlation_id)
+        .bind(event.occurred_at)
+        .execute(&mut **transaction)
         .await?;
         Ok(())
     }

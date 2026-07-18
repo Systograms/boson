@@ -219,6 +219,10 @@ impl Capability for IdentityCapability {
         }
     }
 
+    fn scopes(&self) -> &'static [&'static str] {
+        &["identity:read"]
+    }
+
     fn app_router(&self) -> Router {
         let protected = Router::new()
             .route("/auth/me", get(me))

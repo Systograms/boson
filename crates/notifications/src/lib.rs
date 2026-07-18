@@ -65,6 +65,10 @@ impl Capability for NotificationsCapability {
         }
     }
 
+    fn scopes(&self) -> &'static [&'static str] {
+        &["notifications:read"]
+    }
+
     fn admin_router(&self) -> Router {
         Router::new()
             .route("/notifications", get(list_deliveries))

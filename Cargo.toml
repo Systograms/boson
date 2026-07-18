@@ -12,6 +12,8 @@ members = [
     "crates/db",
     "crates/ops",
     "crates/capability",
+    "crates/sdk",
+    "crates/runtime",
     "crates/admin",
     "crates/audit",
     "crates/notifications",

@@ -252,6 +252,10 @@ impl Capability for OpsCapability {
         }
     }
 
+    fn scopes(&self) -> &'static [&'static str] {
+        &["ops:read", "config:read"]
+    }
+
     fn admin_router(&self) -> Router {
         Router::new()
             .route("/health", get(admin_health))

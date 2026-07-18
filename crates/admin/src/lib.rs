@@ -1,6 +1,6 @@
 //! Persistent platform administrator identities and scoped API keys.
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use axum::{
     Extension, Json, Router,
@@ -21,22 +21,8 @@ use subtle::ConstantTimeEq;
 use thiserror::Error;
 use uuid::Uuid;
 
-const DEFAULT_SCOPES: &[&str] = &[
-    "admins:read",
-    "admins:write",
-    "audit:read",
-    "identity:read",
-    "organizations:read",
-    "ops:read",
-    "config:read",
-    "database:read",
-    "events:read",
-    "jobs:read",
-    "jobs:write",
-    "notifications:read",
-    "storage:read",
-    "storage:write",
-];
+/// Core Admin scopes always available even before other capabilities register.
+const CORE_SCOPES: &[&str] = &["admins:read", "admins:write"];
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AdminPrincipal {
@@ -137,6 +123,7 @@ impl AdminAuth {
 #[derive(Clone)]
 struct AdminState {
     database: Option<Database>,
+    issued_scopes: Arc<RwLock<Vec<String>>>,
 }
 
 #[derive(Clone)]
@@ -148,8 +135,28 @@ impl AdminCapability {
     #[must_use]
     pub fn new(database: Option<Database>) -> Self {
         Self {
-            state: AdminState { database },
+            state: AdminState {
+                database,
+                issued_scopes: Arc::new(RwLock::new(
+                    CORE_SCOPES.iter().map(ToString::to_string).collect(),
+                )),
+            },
         }
+    }
+
+    /// Replaces the default scopes issued to newly created Admin API keys.
+    ///
+    /// The runtime calls this after capability registration so third-party
+    /// scopes declared via [`Capability::scopes`] are included.
+    pub fn set_issued_scopes(&self, scopes: impl IntoIterator<Item = impl Into<String>>) {
+        let mut issued = scopes.into_iter().map(Into::into).collect::<Vec<_>>();
+        issued.sort();
+        issued.dedup();
+        *self
+            .state
+            .issued_scopes
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = issued;
     }
 }
 
@@ -160,6 +167,10 @@ impl Capability for AdminCapability {
             version: env!("CARGO_PKG_VERSION"),
             dependencies: &["ops"],
         }
+    }
+
+    fn scopes(&self) -> &'static [&'static str] {
+        CORE_SCOPES
     }
 
     fn admin_router(&self) -> Router {
@@ -296,7 +307,7 @@ async fn create_admin(
     let token_hash = hash_token(&token);
     let token_prefix = token.chars().take(20).collect::<String>();
     let key_name = input.key_name.as_deref().unwrap_or("default");
-    let scopes = default_scopes();
+    let scopes = state.default_scopes();
     let mut transaction = database.pool().begin().await.map_err(unavailable)?;
 
     let result = sqlx::query(
@@ -383,7 +394,7 @@ async fn create_api_key(
     let id = Uuid::now_v7();
     let token = generate_token();
     let prefix = token.chars().take(20).collect::<String>();
-    let scopes = input.scopes.unwrap_or_else(default_scopes);
+    let scopes = input.scopes.unwrap_or_else(|| state.default_scopes());
     sqlx::query(
         "INSERT INTO admin.api_keys
          (id, admin_id, name, token_hash, token_prefix, scopes)
@@ -455,8 +466,13 @@ fn normalize_email(email: &str) -> Result<String, AdminError> {
     Ok(email)
 }
 
-fn default_scopes() -> Vec<String> {
-    DEFAULT_SCOPES.iter().map(ToString::to_string).collect()
+impl AdminState {
+    fn default_scopes(&self) -> Vec<String> {
+        self.issued_scopes
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
 }
 
 fn generate_token() -> String {

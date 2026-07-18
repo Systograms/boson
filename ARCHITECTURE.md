@@ -13,17 +13,20 @@ Boson consists of five independently usable applications:
 ## Dependency rule
 
 ```text
-Host applications
+Standalone / host apps
     ↓
-Capabilities (domain behavior)
+boson-runtime (composition) + application capabilities
+    ↓
+boson-sdk → Capability contract / ports / events / db helpers
     ↓
 Kernel + Ports + Events
     ↑
 Adapters (provider implementations)
 ```
 
-The composition root in Server and Worker is the only place where concrete
-adapters are selected. Domain crates cannot depend on cloud SDKs.
+`boson-runtime` is the shared composition root for Server and Worker. Concrete
+adapters are selected there. Application capabilities depend on `boson-sdk`
+and must not depend on cloud SDKs.
 
 ## Runtime lifecycle
 
@@ -62,5 +65,12 @@ execute business behavior inline.
 ## Stability
 
 Stable surfaces are Admin/App OpenAPI, port contracts, configuration keys,
-event/job schemas, middleware slots, and capability registration. Internal
-Axum, SQLx, and provider types are not platform contracts.
+event/job schemas, middleware slots, `boson-sdk`, `boson-runtime::Builder`, and
+capability registration. Internal Axum, SQLx, and provider types are not
+platform contracts.
+
+## CLI exceptions
+
+Dashboard and CLI are API clients. The sole intentional exception is
+`boson migrate`, which applies SQL migrations directly for local and CI
+workflows.

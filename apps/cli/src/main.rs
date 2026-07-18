@@ -1,7 +1,11 @@
-use anyhow::{Context, Result, bail};
+mod client;
+mod commands;
+mod project;
+mod templates;
+
+use anyhow::Result;
 use clap::{Parser, Subcommand};
-use reqwest::Client;
-use serde_json::Value;
+use client::AdminClient;
 
 #[derive(Debug, Parser)]
 #[command(name = "boson", version, about = "Boson platform developer CLI")]
@@ -16,12 +20,50 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Check public liveness and readiness endpoints.
+    /// Check prerequisites, project metadata, and server health.
     Doctor,
     /// Read the redacted effective server configuration.
     Config,
     /// Print the server's operational overview.
     Overview,
+    /// Scaffold a standalone Boson application workspace.
+    Init {
+        /// Application name (kebab-case).
+        name: String,
+        /// Destination directory. Defaults to `./<name>`.
+        #[arg(long)]
+        path: Option<String>,
+        /// Path to a local Boson checkout used for path dependencies.
+        #[arg(long)]
+        boson_path: Option<String>,
+        /// Git URL for Boson dependencies. Ignored when `--boson-path` is set.
+        #[arg(long, default_value = "https://github.com/Systograms/boson")]
+        boson_git: String,
+        /// Git branch/tag/rev for `--boson-git`.
+        #[arg(long, default_value = "main")]
+        boson_rev: String,
+        /// Overwrite an existing non-empty destination.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Apply platform and project capability migrations.
+    ///
+    /// This is a narrow operational exception to the CLI's otherwise API-only
+    /// rule: migrations must touch PostgreSQL directly.
+    Migrate {
+        /// Config file path. Defaults to `BOSON_CONFIG` or `config/local.yaml`.
+        #[arg(long)]
+        config: Option<String>,
+    },
+    /// Start Postgres (via Compose), migrate, then run server and worker.
+    Dev {
+        /// Config file path. Defaults to `BOSON_CONFIG` or `config/local.yaml`.
+        #[arg(long)]
+        config: Option<String>,
+        /// Skip starting Compose Postgres.
+        #[arg(long)]
+        no_db: bool,
+    },
     /// Manage persistent platform administrator identities.
     Admin {
         #[command(subcommand)]
@@ -45,11 +87,36 @@ enum AdminCommand {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    let client = Client::new();
+    let client = AdminClient::new(cli.server.clone(), cli.admin_token.clone());
     match cli.command {
-        Command::Doctor => doctor(&client, &cli.server).await,
-        Command::Config => admin_get(&client, &cli.server, cli.admin_token, "config").await,
-        Command::Overview => admin_get(&client, &cli.server, cli.admin_token, "overview").await,
+        Command::Doctor => commands::doctor::run(&client).await,
+        Command::Config => {
+            let body = client.get("config").await?;
+            println!("{}", serde_json::to_string_pretty(&body)?);
+            Ok(())
+        }
+        Command::Overview => {
+            let body = client.get("overview").await?;
+            println!("{}", serde_json::to_string_pretty(&body)?);
+            Ok(())
+        }
+        Command::Init {
+            name,
+            path,
+            boson_path,
+            boson_git,
+            boson_rev,
+            force,
+        } => commands::init::run(commands::init::InitArgs {
+            name,
+            path,
+            boson_path,
+            boson_git,
+            boson_rev,
+            force,
+        }),
+        Command::Migrate { config } => commands::migrate::run(config).await,
+        Command::Dev { config, no_db } => commands::dev::run(config, no_db).await,
         Command::Admin {
             command:
                 AdminCommand::Create {
@@ -58,80 +125,18 @@ async fn main() -> Result<()> {
                     key_name,
                 },
         } => {
-            admin_post(
-                &client,
-                &cli.server,
-                cli.admin_token,
-                "admins",
-                serde_json::json!({
-                    "email": email,
-                    "display_name": display_name,
-                    "key_name": key_name
-                }),
-            )
-            .await
+            let body = client
+                .post(
+                    "admins",
+                    serde_json::json!({
+                        "email": email,
+                        "display_name": display_name,
+                        "key_name": key_name
+                    }),
+                )
+                .await?;
+            println!("{}", serde_json::to_string_pretty(&body)?);
+            Ok(())
         }
     }
-}
-
-async fn admin_post(
-    client: &Client,
-    server: &str,
-    token: Option<String>,
-    endpoint: &str,
-    body: Value,
-) -> Result<()> {
-    let token =
-        token.context("admin token required; pass --admin-token or set BOSON_ADMIN_TOKEN")?;
-    let url = format!("{}/admin/v1/{endpoint}", server.trim_end_matches('/'));
-    let response = client
-        .post(url)
-        .bearer_auth(token)
-        .json(&body)
-        .send()
-        .await?;
-    let status = response.status();
-    let body: Value = response.json().await?;
-    println!("{}", serde_json::to_string_pretty(&body)?);
-    if !status.is_success() {
-        bail!("Admin API returned {status}");
-    }
-    Ok(())
-}
-
-async fn doctor(client: &Client, server: &str) -> Result<()> {
-    for endpoint in ["healthz", "readyz"] {
-        let url = format!("{}/{endpoint}", server.trim_end_matches('/'));
-        let response = client
-            .get(&url)
-            .send()
-            .await
-            .with_context(|| format!("cannot connect to {url}; is boson-server running?"))?;
-        let status = response.status();
-        let body: Value = response.json().await?;
-        println!("{endpoint}: {status} {body}");
-        if !status.is_success() {
-            bail!("{endpoint} check failed");
-        }
-    }
-    Ok(())
-}
-
-async fn admin_get(
-    client: &Client,
-    server: &str,
-    token: Option<String>,
-    endpoint: &str,
-) -> Result<()> {
-    let token =
-        token.context("admin token required; pass --admin-token or set BOSON_ADMIN_TOKEN")?;
-    let url = format!("{}/admin/v1/{endpoint}", server.trim_end_matches('/'));
-    let response = client.get(url).bearer_auth(token).send().await?;
-    let status = response.status();
-    let body: Value = response.json().await?;
-    println!("{}", serde_json::to_string_pretty(&body)?);
-    if !status.is_success() {
-        bail!("Admin API returned {status}");
-    }
-    Ok(())
 }

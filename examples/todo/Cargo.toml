@@ -1,0 +1,21 @@
+[workspace]
+members = [
+    "apps/server",
+    "apps/worker",
+    "apps/migrate",
+    "capabilities/todos",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.94"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"

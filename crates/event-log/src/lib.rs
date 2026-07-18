@@ -38,6 +38,10 @@ impl Capability for EventsCapability {
         }
     }
 
+    fn scopes(&self) -> &'static [&'static str] {
+        &["events:read"]
+    }
+
     fn admin_router(&self) -> Router {
         Router::new()
             .route("/events", get(list_events))

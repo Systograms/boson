@@ -35,6 +35,10 @@ impl Capability for JobsCapability {
         }
     }
 
+    fn scopes(&self) -> &'static [&'static str] {
+        &["jobs:read", "jobs:write"]
+    }
+
     fn admin_router(&self) -> Router {
         Router::new()
             .route("/jobs", get(list_jobs))

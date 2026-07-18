@@ -56,6 +56,10 @@ impl Capability for AuditCapability {
         }
     }
 
+    fn scopes(&self) -> &'static [&'static str] {
+        &["audit:read"]
+    }
+
     fn admin_router(&self) -> Router {
         Router::new()
             .route("/audit", get(list_entries))

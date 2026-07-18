@@ -58,9 +58,11 @@ Deserialize with `config.capability_config::<T>("todos")`.
 
 ## Migrations
 
-Platform migrations are embedded in `boson-runtime`. Capability migrations are
-directories declared by `Capability::migrations()` and applied in registration
-order. Migration version numbers must be unique across the whole database.
+Platform migrations ship with the Boson checkout and are applied into
+`_sqlx_migrations`. Capability migrations are directories declared by
+`Capability::migrations()` and applied in registration order into a dedicated
+`_sqlx_migrations_<capability>` table, so version numbers only need to be unique
+within that capability.
 
 ## Scopes
 

@@ -1,0 +1,53 @@
+app:
+  name: todo
+  environment: development
+
+http:
+  host: 0.0.0.0
+  port: 8080
+
+database:
+  url: postgres://boson:boson@localhost:5432/boson
+  max_connections: 10
+  connect_on_boot: true
+  run_migrations: true
+
+database_inspection:
+  enabled: true
+
+telemetry:
+  log_level: info
+  json: false
+
+admin:
+  bootstrap_token: local-development-token
+
+auth:
+  issuer: todo
+  jwt_secret: local-development-jwt-secret
+  access_ttl_seconds: 900
+  refresh_ttl_days: 30
+  email_verification_ttl_hours: 24
+  password_reset_ttl_minutes: 60
+
+storage:
+  provider: local
+  local_root: data/storage
+  public_base_url: ""
+
+queue:
+  provider: postgres
+  poll_interval_ms: 1000
+  batch_size: 25
+  visibility_timeout_seconds: 60
+  max_attempts: 5
+
+mail:
+  provider: local
+  from: "Boson <no-reply@localhost>"
+  local_root: data/mail
+  public_app_url: http://localhost:3000
+
+capabilities:
+  todos:
+    max_todos: 100

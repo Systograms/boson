@@ -74,6 +74,10 @@ impl Capability for FilesCapability {
         }
     }
 
+    fn scopes(&self) -> &'static [&'static str] {
+        &["storage:read", "storage:write"]
+    }
+
     fn app_router(&self) -> Router {
         Router::new()
             .route("/files", post(upload_file).get(list_files))

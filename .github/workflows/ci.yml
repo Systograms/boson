@@ -20,6 +20,97 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
 
+  example:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Build and test todo example
+        working-directory: examples/todo
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+      - name: Scaffold contract
+        run: |
+          tmp="$(mktemp -d)"
+          cargo run -q -p boson-cli -- init scaffold-app \
+            --path "$tmp/scaffold-app" \
+            --boson-path "$PWD"
+          cd "$tmp/scaffold-app"
+          cargo check --workspace
+
+  smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: boson
+          POSTGRES_PASSWORD: boson
+          POSTGRES_DB: boson
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U boson"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Migrate and exercise todo example
+        working-directory: examples/todo
+        env:
+          BOSON_CONFIG: config/local.yaml
+          BOSON__DATABASE__URL: postgres://boson:boson@localhost:5432/boson
+          BOSON__DATABASE__CONNECT_ON_BOOT: "true"
+          BOSON__DATABASE__RUN_MIGRATIONS: "true"
+          BOSON__ADMIN__BOOTSTRAP_TOKEN: local-development-token
+          BOSON__AUTH__JWT_SECRET: local-development-jwt-secret
+        run: |
+          cargo run -q -p todo_migrate
+          cargo run -q -p todo_server &
+          server_pid=$!
+          cargo run -q -p todo_worker &
+          worker_pid=$!
+          cleanup() {
+            kill "$server_pid" "$worker_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          for _ in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/readyz >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://localhost:8080/healthz
+          register="$(curl -fsS -X POST http://localhost:8080/v1/auth/register \
+            -H 'content-type: application/json' \
+            -d '{"email":"todo@example.com","password":"correct-horse-battery","display_name":"Todo"}')"
+          token="$(printf '%s' "$register" | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
+          curl -fsS -X POST http://localhost:8080/v1/todos \
+            -H "authorization: Bearer $token" \
+            -H 'content-type: application/json' \
+            -d '{"title":"Ship Capability SDK"}'
+          curl -fsS http://localhost:8080/admin/v1/todos \
+            -H 'authorization: Bearer local-development-token' \
+            | grep -q 'Ship Capability SDK'
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/admin/v1/events \
+              -H 'authorization: Bearer local-development-token' \
+              | grep -q 'todos.todo_created.v1'; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "todo created event was not observed" >&2
+          exit 1
+
   web:
     runs-on: ubuntu-latest
     strategy:
@@ -33,6 +124,8 @@ jobs:
           cache: npm
           cache-dependency-path: apps/${{ matrix.app }}/package-lock.json
       - run: npm ci
+        working-directory: apps/${{ matrix.app }}
+      - run: npm run lint
         working-directory: apps/${{ matrix.app }}
       - run: npm run build
         working-directory: apps/${{ matrix.app }}

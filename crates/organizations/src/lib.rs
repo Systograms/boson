@@ -196,6 +196,10 @@ impl Capability for OrganizationsCapability {
         }
     }
 
+    fn scopes(&self) -> &'static [&'static str] {
+        &["organizations:read"]
+    }
+
     fn app_router(&self) -> Router {
         Router::new()
             .route(

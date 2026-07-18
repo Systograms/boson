@@ -1,14 +1,14 @@
 //! Stable platform primitives shared by Boson applications and capabilities.
 
 use std::{
-    collections::hash_map::DefaultHasher,
+    collections::{BTreeMap, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
     path::Path,
 };
 
 use chrono::{DateTime, Utc};
 use config::{Config as ConfigLoader, Environment, File};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use thiserror::Error;
 use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
@@ -26,6 +26,12 @@ pub struct PlatformConfig {
     pub queue: QueueConfig,
     pub mail: MailConfig,
     pub database_inspection: DatabaseInspectionConfig,
+    /// Typed capability-owned configuration keyed by capability name.
+    ///
+    /// Core sections remain closed (`deny_unknown_fields`). Capability authors
+    /// deserialize their own section with [`PlatformConfig::capability_config`].
+    #[serde(default)]
+    pub capabilities: BTreeMap<String, serde_json::Value>,
 }
 
 impl PlatformConfig {
@@ -85,6 +91,26 @@ impl PlatformConfig {
             );
         }
         value
+    }
+
+    /// Deserializes the namespaced `capabilities.<name>` section.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`KernelError::InvalidConfig`] when the section exists but does
+    /// not match `T`.
+    pub fn capability_config<T: DeserializeOwned>(
+        &self,
+        name: &str,
+    ) -> Result<Option<T>, KernelError> {
+        let Some(value) = self.capabilities.get(name) else {
+            return Ok(None);
+        };
+        serde_json::from_value(value.clone())
+            .map(Some)
+            .map_err(|error| {
+                KernelError::InvalidConfig(format!("capabilities.{name} is invalid: {error}"))
+            })
     }
 }
 
@@ -405,5 +431,29 @@ mod tests {
     fn snapshot_is_stable_for_same_config() {
         let config = PlatformConfig::default();
         assert_eq!(config.snapshot_id(), config.snapshot_id());
+    }
+
+    #[test]
+    fn capability_config_deserializes_namespaced_sections() {
+        #[derive(Debug, Deserialize, PartialEq, Eq)]
+        struct TodosConfig {
+            max_items: u32,
+        }
+
+        let mut config = PlatformConfig::default();
+        config
+            .capabilities
+            .insert("todos".into(), serde_json::json!({ "max_items": 25 }));
+        let todos = config
+            .capability_config::<TodosConfig>("todos")
+            .unwrap()
+            .unwrap();
+        assert_eq!(todos, TodosConfig { max_items: 25 });
+        assert!(
+            config
+                .capability_config::<TodosConfig>("missing")
+                .unwrap()
+                .is_none()
+        );
     }
 }

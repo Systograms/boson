@@ -1,0 +1,17 @@
+app:
+  name: todo
+  environment: development
+
+http:
+  host: 0.0.0.0
+  port: 8080
+
+database:
+  connect_on_boot: false
+  run_migrations: false
+
+admin:
+  bootstrap_token: ""
+
+auth:
+  jwt_secret: ""

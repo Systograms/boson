@@ -15,7 +15,7 @@ capabilities; billing remains out of scope.
 | `apps/server` | HTTP host for public and Admin APIs |
 | `apps/worker` | Background processing and worker heartbeats |
 | `apps/dashboard` | Optional React client of the Admin API |
-| `apps/cli` | Developer and operator client |
+| `apps/cli` | Developer CLI (`init`, `migrate`, `dev`, `doctor`, Admin helpers) |
 | `apps/website` | Marketing site and documentation (Vercel) |
 
 ## Platform crates
@@ -24,6 +24,8 @@ capabilities; billing remains out of scope.
 |---|---|
 | `boson-kernel` | Typed configuration, redaction, context, telemetry |
 | `boson-capability` | Capability registration, dependency order, routes, jobs |
+| `boson-sdk` | Public Capability SDK facade for application authors |
+| `boson-runtime` | Shared server/worker composition and embedded migrations |
 | `boson-ports` | Provider-agnostic storage, queue, mailer, health contracts |
 | `boson-events` | Versioned event envelope and consumer contract |
 | `boson-db` | PostgreSQL pool, migrations, outbox, worker heartbeat |
@@ -222,8 +224,19 @@ npm run build --prefix apps/website
 7. Provider implementations remain behind small ports.
 8. Deployment packaging never leaks into application logic.
 
-## Next product phase
+## Capability SDK and CLI onboarding
 
-The SaaS foundation is complete. The next phase is the public Capability SDK,
-CLI onboarding (`boson init`, `boson dev`), and example applications that prove
-third-party product capabilities can compose cleanly with the platform.
+Standalone apps depend on `boson-runtime` and `boson-sdk`:
+
+```bash
+cargo run -p boson-cli -- init my-app --boson-path .
+cd my-app
+cargo run -p boson-cli --manifest-path ../Cargo.toml -- migrate
+cargo run -p boson-cli --manifest-path ../Cargo.toml -- dev
+```
+
+`boson migrate` applies platform migrations plus capability-owned SQL
+directories (each capability uses its own `_sqlx_migrations_<name>` table).
+This is a documented exception to the CLI's otherwise API-only rule. See
+`examples/todo` for a complete reference app and the website docs under
+Getting started / Capability SDK.

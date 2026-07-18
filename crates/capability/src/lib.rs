@@ -1,6 +1,6 @@
 //! The stable registration contract for first- and third-party capabilities.
 
-use std::{path::PathBuf, sync::Arc};
+use std::{collections::BTreeSet, path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
 use axum::Router;
@@ -42,6 +42,11 @@ pub trait JobHandler: Send + Sync {
 pub trait Capability: Send + Sync {
     fn descriptor(&self) -> CapabilityDescriptor;
 
+    /// Admin API scopes this capability expects issued keys to optionally hold.
+    fn scopes(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     fn app_router(&self) -> Router {
         Router::new()
     }
@@ -80,6 +85,10 @@ pub enum RegistrationError {
         capability: &'static str,
         dependency: &'static str,
     },
+    #[error("duplicate job handler `{0}`")]
+    DuplicateJobHandler(&'static str),
+    #[error("duplicate event consumer `{0}`")]
+    DuplicateEventConsumer(&'static str),
 }
 
 #[derive(Default)]
@@ -92,8 +101,9 @@ impl CapabilityRegistry {
     ///
     /// # Errors
     ///
-    /// Returns [`RegistrationError`] if the name is already registered or a
-    /// declared dependency has not been registered first.
+    /// Returns [`RegistrationError`] if the name is already registered, a
+    /// declared dependency has not been registered first, or a job/event
+    /// handler name collides with an earlier registration.
     pub fn register(&mut self, capability: Arc<dyn Capability>) -> Result<(), RegistrationError> {
         let descriptor = capability.descriptor();
         if self
@@ -115,6 +125,29 @@ impl CapabilityRegistry {
                 });
             }
         }
+
+        let mut existing_jobs = self
+            .job_handlers()
+            .into_iter()
+            .map(|handler| handler.name())
+            .collect::<BTreeSet<_>>();
+        for handler in capability.job_handlers() {
+            if !existing_jobs.insert(handler.name()) {
+                return Err(RegistrationError::DuplicateJobHandler(handler.name()));
+            }
+        }
+
+        let mut existing_consumers = self
+            .event_consumers()
+            .into_iter()
+            .map(|consumer| consumer.name())
+            .collect::<BTreeSet<_>>();
+        for consumer in capability.event_consumers() {
+            if !existing_consumers.insert(consumer.name()) {
+                return Err(RegistrationError::DuplicateEventConsumer(consumer.name()));
+            }
+        }
+
         self.capabilities.push(capability);
         Ok(())
     }
@@ -141,6 +174,18 @@ impl CapabilityRegistry {
             .iter()
             .map(|capability| capability.descriptor())
             .collect()
+    }
+
+    /// Collects unique Admin scopes declared by registered capabilities.
+    #[must_use]
+    pub fn scopes(&self) -> Vec<&'static str> {
+        let mut scopes = BTreeSet::new();
+        for capability in &self.capabilities {
+            for scope in capability.scopes() {
+                scopes.insert(*scope);
+            }
+        }
+        scopes.into_iter().collect()
     }
 
     #[must_use]
@@ -187,10 +232,15 @@ impl CapabilityRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use boson_events::{EventEnvelope, EventError};
 
     struct TestCapability {
         name: &'static str,
         dependencies: &'static [&'static str],
+        scopes: &'static [&'static str],
+        job: Option<&'static str>,
+        consumer: Option<&'static str>,
     }
 
     impl Capability for TestCapability {
@@ -201,6 +251,54 @@ mod tests {
                 dependencies: self.dependencies,
             }
         }
+
+        fn scopes(&self) -> &'static [&'static str] {
+            self.scopes
+        }
+
+        fn job_handlers(&self) -> Vec<Arc<dyn JobHandler>> {
+            self.job
+                .map(|name| Arc::new(NamedJob(name)) as Arc<dyn JobHandler>)
+                .into_iter()
+                .collect()
+        }
+
+        fn event_consumers(&self) -> Vec<Arc<dyn EventConsumer>> {
+            self.consumer
+                .map(|name| Arc::new(NamedConsumer(name)) as Arc<dyn EventConsumer>)
+                .into_iter()
+                .collect()
+        }
+    }
+
+    struct NamedJob(&'static str);
+
+    #[async_trait]
+    impl JobHandler for NamedJob {
+        fn name(&self) -> &'static str {
+            self.0
+        }
+
+        async fn handle(&self, _job: &JobEnvelope) -> Result<(), EventError> {
+            Ok(())
+        }
+    }
+
+    struct NamedConsumer(&'static str);
+
+    #[async_trait]
+    impl EventConsumer for NamedConsumer {
+        fn name(&self) -> &'static str {
+            self.0
+        }
+
+        fn topic(&self) -> &'static str {
+            "test.topic.v1"
+        }
+
+        async fn handle(&self, _event: &EventEnvelope) -> Result<(), EventError> {
+            Ok(())
+        }
     }
 
     #[test]
@@ -209,10 +307,91 @@ mod tests {
         let child = Arc::new(TestCapability {
             name: "child",
             dependencies: &["parent"],
+            scopes: &[],
+            job: None,
+            consumer: None,
         });
         assert!(matches!(
             registry.register(child),
             Err(RegistrationError::MissingDependency { .. })
+        ));
+    }
+
+    #[test]
+    fn collects_unique_scopes() {
+        let mut registry = CapabilityRegistry::default();
+        registry
+            .register(Arc::new(TestCapability {
+                name: "a",
+                dependencies: &[],
+                scopes: &["a:read", "shared:read"],
+                job: None,
+                consumer: None,
+            }))
+            .unwrap();
+        registry
+            .register(Arc::new(TestCapability {
+                name: "b",
+                dependencies: &[],
+                scopes: &["b:read", "shared:read"],
+                job: None,
+                consumer: None,
+            }))
+            .unwrap();
+        assert_eq!(registry.scopes(), vec!["a:read", "b:read", "shared:read"]);
+    }
+
+    #[test]
+    fn rejects_duplicate_job_handlers() {
+        let mut registry = CapabilityRegistry::default();
+        registry
+            .register(Arc::new(TestCapability {
+                name: "a",
+                dependencies: &[],
+                scopes: &[],
+                job: Some("shared.job"),
+                consumer: None,
+            }))
+            .unwrap();
+        let error = registry
+            .register(Arc::new(TestCapability {
+                name: "b",
+                dependencies: &[],
+                scopes: &[],
+                job: Some("shared.job"),
+                consumer: None,
+            }))
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            RegistrationError::DuplicateJobHandler("shared.job")
+        ));
+    }
+
+    #[test]
+    fn rejects_duplicate_event_consumers() {
+        let mut registry = CapabilityRegistry::default();
+        registry
+            .register(Arc::new(TestCapability {
+                name: "a",
+                dependencies: &[],
+                scopes: &[],
+                job: None,
+                consumer: Some("shared.consumer"),
+            }))
+            .unwrap();
+        let error = registry
+            .register(Arc::new(TestCapability {
+                name: "b",
+                dependencies: &[],
+                scopes: &[],
+                job: None,
+                consumer: Some("shared.consumer"),
+            }))
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            RegistrationError::DuplicateEventConsumer("shared.consumer")
         ));
     }
 }

@@ -49,6 +49,10 @@ impl Capability for DatabaseInspectionCapability {
         }
     }
 
+    fn scopes(&self) -> &'static [&'static str] {
+        &["database:read"]
+    }
+
     fn admin_router(&self) -> Router {
         Router::new()
             .route("/database", get(capabilities))
