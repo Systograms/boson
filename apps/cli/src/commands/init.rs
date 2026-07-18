@@ -16,6 +16,7 @@ pub struct InitArgs {
     pub boson_path: Option<String>,
     pub boson_git: String,
     pub boson_rev: String,
+    pub database_url: Option<String>,
     pub force: bool,
 }
 
@@ -41,7 +42,10 @@ pub fn run(args: InitArgs) -> Result<()> {
         },
     };
 
-    let ctx = TemplateContext::new(&args.name, source);
+    let mut ctx = TemplateContext::new(&args.name, source);
+    if let Some(database_url) = args.database_url {
+        ctx.database_url = database_url;
+    }
     for file in render_project(&ctx) {
         let path = destination.join(file.relative_path);
         if let Some(parent) = path.parent() {
@@ -58,6 +62,8 @@ pub fn run(args: InitArgs) -> Result<()> {
     println!();
     println!("Next steps:");
     println!("  cd {}", destination.display());
+    println!("  # point `.boson/config.yaml` at infrastructure you own");
+    println!("  boson doctor");
     println!("  boson start");
     Ok(())
 }
@@ -109,6 +115,7 @@ mod tests {
             boson_path: Some(boson.to_string_lossy().into()),
             boson_git: "https://example.com/boson".into(),
             boson_rev: "main".into(),
+            database_url: Some("postgres://app:secret@db.example:5432/app".into()),
             force: false,
         })
         .unwrap();
@@ -118,12 +125,20 @@ mod tests {
         assert!(!manifest.contains("config_path"));
         assert!(!dest.join("config").exists());
         assert!(dest.join("capabilities/items/src/lib.rs").is_file());
+        assert!(dest.join("apps/app/src/lib.rs").is_file());
         let readme = fs::read_to_string(dest.join("README.md")).unwrap();
-        assert!(readme.contains("boson start"));
+        assert!(readme.contains("boson create"));
+        assert!(readme.contains("boson doctor"));
         assert!(!readme.contains("docker compose"));
         assert!(!dest.join("compose.yaml").exists());
+        let config = fs::read_to_string(dest.join(".boson/config.yaml")).unwrap();
+        assert!(config.contains("postgres://app:secret@db.example:5432/app"));
         let cargo = fs::read_to_string(dest.join("apps/server/Cargo.toml")).unwrap();
         assert!(cargo.contains("crates/runtime"));
+        assert!(cargo.contains("path = \"../app\""));
+        let server = fs::read_to_string(dest.join("apps/server/src/main.rs")).unwrap();
+        assert!(server.contains(".register("));
+        assert!(!server.contains(".extend("));
         let items = fs::read_to_string(dest.join("capabilities/items/Cargo.toml")).unwrap();
         assert!(items.contains("crates/sdk"));
     }

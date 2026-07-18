@@ -37,9 +37,10 @@ jobs:
       - name: Scaffold contract
         run: |
           tmp="$(mktemp -d)"
-          cargo run -q -p boson-cli -- init scaffold-app \
+          cargo run -q -p boson-cli -- create scaffold-app \
             --path "$tmp/scaffold-app" \
-            --boson-path "$PWD"
+            --boson-path "$PWD" \
+            --database-url postgres://boson:boson@localhost:5432/boson
           cd "$tmp/scaffold-app"
           cargo check --workspace
 
@@ -123,9 +124,29 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/${{ matrix.app }}/package-lock.json
+      - name: Build dashboard SDK dependency
+        if: matrix.app == 'dashboard'
+        run: npm ci && npm run build
+        working-directory: packages/js-sdk
       - run: npm ci
         working-directory: apps/${{ matrix.app }}
       - run: npm run lint
         working-directory: apps/${{ matrix.app }}
       - run: npm run build
         working-directory: apps/${{ matrix.app }}
+
+  js-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/js-sdk/package-lock.json
+      - run: npm ci
+        working-directory: packages/js-sdk
+      - run: npm test
+        working-directory: packages/js-sdk
+      - run: npm run build
+        working-directory: packages/js-sdk

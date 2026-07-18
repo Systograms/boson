@@ -105,12 +105,12 @@ impl Project {
     /// Returns an actionable error when no marker exists or configuration is invalid.
     pub fn discover(start: Option<&Path>) -> Result<Self> {
         let (root, manifest) = find_project_root(start)?.context(
-            "not inside a Boson project\nfix: run `boson init <name>` or change into a project directory",
+            "not inside a Boson project\nfix: run `boson create <name>` or change into a project directory",
         )?;
         let config_path = root.join(".boson/config.yaml");
         anyhow::ensure!(
             config_path.is_file(),
-            "project configuration is missing at {}\nfix: create `.boson/config.yaml` or run `boson init`",
+            "project configuration is missing at {}\nfix: create `.boson/config.yaml` or run `boson create`",
             config_path.display()
         );
         let config = PlatformConfig::load(&config_path).with_context(|| {

@@ -1,3 +1,5 @@
+# Optional developer-owned helper for local PostgreSQL.
+# Boson never starts or stops this stack.
 services:
   postgres:
     image: postgres:17-alpine
@@ -14,18 +16,6 @@ services:
       interval: 3s
       timeout: 3s
       retries: 10
-
-  dashboard:
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile.dashboard
-    environment:
-      BOSON_API_URL: http://localhost:8080
-    ports:
-      - "3000:80"
-    depends_on:
-      postgres:
-        condition: service_healthy
 
 volumes:
   boson-postgres:

@@ -15,7 +15,8 @@ capabilities; billing remains out of scope.
 | `apps/server` | HTTP host for public and Admin APIs |
 | `apps/worker` | Background processing and worker heartbeats |
 | `apps/dashboard` | Optional React client of the Admin API |
-| `apps/cli` | One-command local lifecycle (`init`, `start`, `stop`, `status`, `logs`, `doctor`) |
+| `apps/cli` | Local lifecycle (`create`, `start`, `stop`, `status`, `logs`, `doctor`, `deploy`) |
+| `packages/js-sdk` | Typed TypeScript HTTP client (`@boson/sdk`) |
 | `apps/website` | Marketing site and documentation (Vercel) |
 
 ## Platform crates
@@ -37,12 +38,14 @@ capabilities; billing remains out of scope.
 | `boson-organizations` | Organizations, role memberships, invitations, and authorization |
 | `boson-files` | End-user file metadata, uploads/downloads behind the ObjectStore port |
 | `boson-storage-local` | Local-filesystem ObjectStore adapter (`adapters/storage-local`) |
+| `boson-storage-s3` | S3-compatible ObjectStore adapter (`adapters/storage-s3`) |
 | `boson-queue-postgres` | Durable at-least-once PostgreSQL queue adapter |
 | `boson-jobs` | Scoped Admin job inspection and manual retry APIs |
 | `boson-event-log` | Scoped Admin outbox and delivery inspection APIs |
 | `boson-audit` | Immutable, redacted event-derived audit trail |
 | `boson-notifications` | Event-driven email rendering and durable delivery history |
 | `boson-mailer-local` | Idempotent development mailbox (`adapters/mailer-local`) |
+| `boson-mailer-smtp` | SMTP mailer adapter (`adapters/mailer-smtp`) |
 
 Dependency direction:
 
@@ -57,21 +60,25 @@ Provider SDK types must not appear in capabilities or public contracts.
 
 ## Run Boson locally
 
-The canonical developer workflow is one command:
+The canonical developer workflow:
 
 ```bash
+boson create my-app --database-url postgres://user:pass@localhost:5432/my_app
+cd my-app
+boson doctor
 boson start
 ```
 
 - Server: <http://localhost:8080>
 - Development Admin token: `local-development-token`
 
-Configure infrastructure you own, then run `boson start`. Boson verifies
-configuration, applies pending migrations, builds and starts the Server and
-Worker, waits for health, and streams prefixed logs. Ctrl+C gracefully stops
-Boson's processes; infrastructure remains untouched.
+Boson verifies configuration, applies pending migrations, builds and starts the
+Server and Worker, waits for health, and streams prefixed logs. Ctrl+C
+gracefully stops Boson's processes. Boson never creates PostgreSQL, buckets,
+mail providers, or cloud services.
 
-Use `boson status`, `boson logs`, and `boson doctor` when needed.
+Package images with `boson deploy` (packaging only). Use `boson status`,
+`boson logs`, and `boson doctor` when needed.
 
 ## APIs currently available
 
@@ -166,12 +173,14 @@ Database inspection is disabled by default. Enable
 for configured `redacted_columns` are never selected from the provider.
 
 Object storage is selected by `storage.provider` at the composition root.
-Only `local` is supported today; any other value fails startup.
+Supported providers are `local` and `s3` (S3-compatible). Unknown values fail
+startup. Boson never creates buckets.
 
-Email is selected by `mail.provider`. The `local` adapter writes one JSON file
-per idempotency key and is intended for development. Verification, password
-reset, and organization invitation email are dispatched by the Worker from
-transactional outbox events.
+Email is selected by `mail.provider`. Supported providers are `local` and
+`smtp`. The local adapter writes one JSON file per idempotency key for
+development; SMTP uses developer-owned relays with TLS required by default.
+Verification, password reset, and organization invitation email are dispatched
+by the Worker from transactional outbox events.
 
 The background queue is configured under `queue` and currently requires the
 `postgres` provider. Workers lease due jobs with `SKIP LOCKED`; expired leases
