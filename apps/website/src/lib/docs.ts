@@ -47,8 +47,12 @@ export function getAllDocs(): DocMeta[] {
       if (!doc) {
         return null
       }
-      const { content: _content, ...meta } = doc
-      return meta
+      return {
+        slug: doc.slug,
+        title: doc.title,
+        description: doc.description,
+        order: doc.order,
+      }
     })
     .filter((doc): doc is DocMeta => doc !== null)
     .sort((a, b) => a.order - b.order)

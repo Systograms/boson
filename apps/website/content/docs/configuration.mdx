@@ -1,36 +1,121 @@
 ---
 title: Configuration
-description: Typed config, local defaults, and redaction.
-order: 4
+description: Project manifests, typed YAML, environment overrides, and redaction.
+order: 6
 ---
 
 Configuration is typed in the kernel and loaded from YAML plus environment
 overrides. Secrets are redacted in Admin snapshots and logs.
 
-## Local development
+## Project files
 
-`config/default.yaml` and `config/local.yaml` provide a runnable foundation.
-Database startup can be disabled so the server can be explored without
-PostgreSQL:
+Every generated project keeps its Boson metadata together:
 
-```bash
-cargo run -p boson-server
-curl http://localhost:8080/healthz
+```text
+.boson/
+├── project.toml
+├── config.yaml
+├── logs/          # generated, ignored
+└── run/           # generated, ignored
 ```
 
-## Complete local stack
+`project.toml` identifies workspace packages and local infrastructure:
 
-```bash
-docker compose up --build
+```toml
+schema_version = 1
+name = "my-app"
+package_prefix = "my_app"
+migrate_package = "my_app_migrate"
+server_package = "my_app_server"
+worker_package = "my_app_worker"
+config_path = ".boson/config.yaml"
+infrastructure_enabled = true
+dashboard_enabled = true
 ```
 
-- Server: `http://localhost:8080`
-- Dashboard: `http://localhost:3000`
-- PostgreSQL: `localhost:5432`
-- Development Admin token: `local-development-token`
+Boson discovers this marker by walking upward from the current directory, so
+lifecycle commands work inside nested capability folders too.
+
+## Load order
+
+Runtime configuration is merged in this order:
+
+1. Typed platform defaults
+2. The YAML file referenced by `config_path`
+3. `BOSON__` environment variables
+
+If the configured path is missing, Boson still accepts a legacy
+`config/local.yaml` as a fallback. New projects should use
+`.boson/config.yaml`.
+
+Environment keys use double underscores for nesting:
+
+```bash
+export BOSON__DATABASE__URL=postgres://boson:boson@localhost:5432/boson
+export BOSON__ADMIN__BOOTSTRAP_TOKEN=replace-me
+export BOSON__TELEMETRY__LOG_LEVEL=debug
+```
+
+`BOSON_CONFIG` can point the runtime at an alternate YAML path when launching
+binaries directly. The CLI uses the project manifest's `config_path`.
+
+## Platform sections
+
+Generated local configuration typically includes:
+
+| Section | Purpose |
+| --- | --- |
+| `app` | Application name and environment |
+| `http` | Bind host and port (default `8080`) |
+| `database` | PostgreSQL URL, pool size, connect/migrate flags |
+| `database_inspection` | Optional Admin database browser |
+| `telemetry` | Log level and JSON formatting |
+| `admin` | Bootstrap Admin token |
+| `auth` | JWT issuer, secret, and token TTLs |
+| `storage` | Object-store provider and local root |
+| `queue` | Background queue provider and lease settings |
+| `mail` | Mailer provider, from address, and local mailbox |
+| `capabilities.*` | Product-owned settings |
+
+## Local endpoints
+
+| Service | Default |
+| --- | --- |
+| Server | `http://localhost:8080` |
+| Dashboard | `http://localhost:3000` |
+| PostgreSQL | `localhost:5432` |
+| Admin bootstrap token | `local-development-token` |
+
+Server readiness is gated on `/readyz`. When the Server binds `0.0.0.0` or
+`::`, local health checks use `127.0.0.1`.
+
+## Capability settings
+
+Platform sections are closed and typed. Product settings belong below the
+capability namespace:
+
+```yaml
+capabilities:
+  items:
+    max_items: 100
+```
+
+Capabilities deserialize their section with
+`config.capability_config::<T>("items")`.
+
+## Inspect effective config
+
+```bash
+boson config
+```
+
+The command loads the discovered **local project** configuration and prints
+JSON with secrets redacted. It does not call the Admin API. The Admin API
+exposes its own redacted runtime snapshot separately.
 
 ## Principles
 
 - Prefer explicit config over magic defaults in production.
 - Never commit production secrets.
+- Keep runtime state in `.boson/run` and logs in `.boson/logs`.
 - The Admin API only exposes a redacted configuration snapshot.

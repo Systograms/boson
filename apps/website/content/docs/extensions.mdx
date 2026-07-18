@@ -1,7 +1,7 @@
 ---
 title: Capability SDK
 description: Build product capabilities on boson-sdk and boson-runtime.
-order: 6
+order: 7
 ---
 
 Third-party product capabilities depend on `boson-sdk`. Host applications
@@ -70,14 +70,19 @@ Capabilities declare Admin scopes via `Capability::scopes()`. The runtime
 collects them after registration and uses the set when issuing Admin API keys.
 Bootstrap tokens continue to carry `*`.
 
-## CLI workflow
+## Local workflow
 
 ```bash
-boson init my-app --boson-path .
+boson init my-app
 cd my-app
-boson migrate
-boson dev
-boson doctor
+boson start
 ```
 
-See `examples/todo` for a complete standalone reference app.
+Infrastructure, migrations, service processes, health gates, and logs stay
+behind the Boson lifecycle. Use `boson status`, `boson logs`, and
+`boson doctor` when needed. Migrations are applied by the generated migrate
+binary during `boson start`; they are not a separate public CLI command.
+
+For Boson contributors, the hidden `--boson-path` init option can point a
+generated app at a local checkout. See `examples/todo` for a complete
+standalone reference app.

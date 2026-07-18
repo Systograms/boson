@@ -3,7 +3,6 @@ import {
   ArrowRight,
   Blocks,
   Boxes,
-  Database,
   FileStack,
   Fingerprint,
   GitBranch,
@@ -132,16 +131,14 @@ export default function HomePage() {
               title="boson — zsh"
               className="w-full max-w-lg justify-self-center lg:justify-self-end"
               lines={[
-                { kind: "command", text: "cargo run -p boson-server" },
-                { kind: "output", text: "boson-server listening on :8080" },
-                { kind: "output", text: "capabilities: identity, organizations," },
-                { kind: "output", text: "  files, jobs, events, audit" },
+                { kind: "command", text: "boson start" },
+                { kind: "output", text: "[postgres] ready" },
+                { kind: "output", text: "[migrate] all migrations applied" },
+                { kind: "output", text: "[server] http://localhost:8080" },
+                { kind: "output", text: "[worker] started" },
+                { kind: "output", text: "[dashboard] http://localhost:3000" },
                 { kind: "blank" },
-                { kind: "command", text: "boson doctor" },
-                { kind: "output", text: "✓ server reachable" },
-                { kind: "output", text: "✓ database connected" },
-                { kind: "output", text: "✓ worker heartbeat ok" },
-                { kind: "output", text: "✓ storage port healthy" },
+                { kind: "output", text: "[boson] running · press Ctrl+C to stop" },
               ]}
             />
           </div>
@@ -248,15 +245,14 @@ export default function HomePage() {
               title="quickstart"
               className="order-2 w-full max-w-lg justify-self-center lg:order-1 lg:justify-self-start"
               lines={[
-                { kind: "command", text: "git clone Systograms/boson && cd boson" },
-                { kind: "command", text: "docker compose up --build" },
-                { kind: "output", text: "postgres    ready on :5432" },
-                { kind: "output", text: "server      ready on :8080" },
-                { kind: "output", text: "worker      heartbeat started" },
-                { kind: "output", text: "dashboard   ready on :3000" },
+                { kind: "command", text: "boson init my-app && cd my-app" },
+                { kind: "output", text: "created Boson app `my-app`" },
                 { kind: "blank" },
-                { kind: "command", text: "curl localhost:8080/healthz" },
-                { kind: "output", text: '{"status":"ok"}' },
+                { kind: "command", text: "boson start" },
+                { kind: "output", text: "[postgres] ready" },
+                { kind: "output", text: "[migrate] all migrations applied" },
+                { kind: "output", text: "[server] http://localhost:8080" },
+                { kind: "output", text: "[dashboard] http://localhost:3000" },
               ]}
             />
             <div className="order-1 lg:order-2">
@@ -267,14 +263,13 @@ export default function HomePage() {
                 From clone to running platform in one command
               </h2>
               <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-                Docker Compose brings up PostgreSQL, the server with
-                migrations, the background worker, and the operational
-                dashboard. Prefer bare metal? The server also runs without a
-                database for quick exploration.
+                The Boson CLI validates your machine, starts managed
+                infrastructure, applies migrations, launches every process,
+                waits for health, and streams one unified log.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Button asChild>
-                  <Link href="/docs/configuration">
+                  <Link href="/docs/getting-started">
                     Read the setup guide
                     <ArrowRight className="size-4" />
                   </Link>

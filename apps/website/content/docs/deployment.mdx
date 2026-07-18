@@ -1,21 +1,57 @@
 ---
 title: Deployment
 description: Packaging the server, worker, and dashboard separately from the website.
-order: 7
+order: 11
 ---
 
 Deployment packaging must not leak into application logic. The server and
 worker are containerized from the Rust workspace; the dashboard has its own
 static image. This website deploys independently on Vercel.
 
-## Platform services
+## Local lifecycle
 
 ```bash
-docker compose up --build
+boson start
 ```
 
-Compose brings up PostgreSQL, the server (with migrations), the worker, and
-the dashboard. Uploaded files and development mail persist in named volumes.
+The CLI uses Docker Compose internally for PostgreSQL and the Dashboard, then
+builds and supervises the project's migrate, Server, and Worker binaries.
+Compose is an implementation detail of local orchestration, not the public
+developer workflow.
+
+Press Ctrl+C or run `boson stop` from another terminal for graceful shutdown.
+Local PostgreSQL data, uploads, and development mail are preserved.
+
+## Production boundaries
+
+Production packaging deploys independent units:
+
+- Server owns public and Admin HTTP traffic.
+- Worker owns background jobs and event consumers.
+- The migrate binary applies platform and capability migrations before rollout.
+- Dashboard is a static Admin API client.
+
+Production orchestration should run migrations explicitly, deploy Server and
+Worker separately, and provide PostgreSQL plus the configured port adapters.
+
+## Dashboard runtime configuration
+
+The Dashboard ships as a reusable image:
+
+```text
+ghcr.io/systograms/boson-dashboard:0.1.0
+```
+
+At runtime, nginx injects `/config.js` from `BOSON_API_URL`:
+
+```js
+window.__BOSON_CONFIG__ = { apiUrl: "http://localhost:8080" }
+```
+
+The Dashboard client reads that value first, then falls back to
+`VITE_BOSON_URL`, then `http://localhost:8080`. Locally, `boson start` manages
+the Dashboard service on port 3000 with this injection. In production, deploy
+the same image and set `BOSON_API_URL` to the Server origin.
 
 ## Website on Vercel
 
@@ -33,3 +69,4 @@ The marketing/docs site does not depend on the Admin API or Docker Compose.
 - Server / worker images ship from `deploy/`
 - Dashboard ships as a static client of the Admin API
 - Website ships as a standalone Next.js app on Vercel
+- Product capabilities depend on `boson-sdk`, not deployment packaging

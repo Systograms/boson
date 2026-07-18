@@ -3,19 +3,29 @@ import { GitHubIcon } from "@/components/icons"
 
 const FOOTER_LINKS: { title: string; links: { label: string; href: string; external?: boolean }[] }[] = [
   {
-    title: "Documentation",
+    title: "Start",
     links: [
       { label: "Introduction", href: "/docs/introduction" },
       { label: "Getting started", href: "/docs/getting-started" },
-      { label: "Architecture", href: "/docs/architecture" },
-      { label: "Deployment", href: "/docs/deployment" },
+      { label: "Project structure", href: "/docs/project-structure" },
+      { label: "CLI reference", href: "/docs/cli-reference" },
+    ],
+  },
+  {
+    title: "Build",
+    links: [
+      { label: "Local lifecycle", href: "/docs/local-lifecycle" },
+      { label: "Configuration", href: "/docs/configuration" },
+      { label: "Capability SDK", href: "/docs/extensions" },
+      { label: "Todo example", href: "/docs/todo-example" },
     ],
   },
   {
     title: "Platform",
     links: [
+      { label: "Architecture", href: "/docs/architecture" },
       { label: "Admin API", href: "/docs/admin-api" },
-      { label: "Capability SDK", href: "/docs/extensions" },
+      { label: "Deployment", href: "/docs/deployment" },
       {
         label: "Source code",
         href: "https://github.com/Systograms/boson",
@@ -48,7 +58,7 @@ export function SiteFooter() {
               <GitHubIcon className="size-4" />
             </a>
           </div>
-          <div className="grid grid-cols-2 gap-10 sm:gap-16">
+          <div className="grid grid-cols-2 gap-10 sm:grid-cols-3 sm:gap-12">
             {FOOTER_LINKS.map((group) => (
               <div key={group.title}>
                 <h3 className="text-sm font-semibold tracking-tight">

@@ -1,62 +1,81 @@
 ---
 title: Getting started
-description: Scaffold, migrate, and run a standalone Boson app.
+description: Create and run a standalone Boson app with one command.
 order: 2
 ---
 
 Create a standalone Boson application with the CLI, then iterate on a product
-capability using the public Capability SDK.
+capability using the public Capability SDK. Boson owns the local lifecycle, so
+you do not need to coordinate Docker, Cargo, migrations, and service processes
+yourself.
 
 ## Prerequisites
 
-- Rust 1.94+
-- Docker (for local PostgreSQL)
-- A Boson checkout when using path dependencies
+- Rust 1.94 or newer
+- Docker Desktop with the Docker daemon running
+- Git
+
+Install the CLI from the Boson repository:
+
+```bash
+cargo install --git https://github.com/Systograms/boson boson-cli
+```
 
 ## Scaffold an app
 
-From a Boson checkout:
-
 ```bash
-cargo run -p boson-cli -- init my-app \
-  --boson-path .
+boson init my-app
 cd my-app
-```
-
-Or depend on Boson from Git:
-
-```bash
-cargo run -p boson-cli -- init my-app \
-  --boson-git https://github.com/Systograms/boson \
-  --boson-rev main
 ```
 
 `boson init` writes a workspace with:
 
 - thin `server`, `worker`, and `migrate` binaries
 - a starter `items` capability
-- Compose Postgres, local config, and `.boson/project.toml`
+- project identity in `.boson/project.toml`
+- typed local configuration in `.boson/config.yaml`
+- managed local infrastructure definitions
 
-## Migrate and run
+## Start everything
 
 ```bash
-boson migrate
-boson dev
+boson start
 ```
 
-`boson migrate` is a narrow operational exception to the CLI's otherwise
-API-only rule: it applies platform migrations plus capability-owned SQL.
-`boson dev` starts Postgres (via Compose), migrates, and launches server plus
-worker.
+Boson checks prerequisites, starts PostgreSQL and the Dashboard, applies
+pending migrations, starts the Server and Worker, waits for health, and streams
+all logs with service prefixes. Press Ctrl+C to gracefully stop everything;
+persistent local data is retained.
 
-## Verify
+The implementation details stay hidden: developers do not need to run Docker,
+Cargo, npm, migration commands, or individual services.
+
+## Operate
 
 ```bash
+boson status
+boson logs
+boson logs server --follow
 boson doctor
-curl http://localhost:8080/healthz
+boson config
+boson stop
 ```
 
-Development Admin token: `local-development-token`.
+`boson doctor` prints specific fixes for missing prerequisites, invalid config,
+occupied ports, and unhealthy infrastructure instead of raw stack traces.
+
+`boson config` prints the effective configuration as JSON with secrets
+redacted. `boson status` reports service state, ports, health, and versions.
+
+## Update the CLI
+
+```bash
+boson update --check
+boson update
+```
+
+The updater checks the latest GitHub release and installs the matching
+`boson-cli` tag through Cargo.
 
 ## Example application
 

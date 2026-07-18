@@ -16,7 +16,7 @@ visibility ship as first-class platform pieces.
 
 ## Stable principles
 
-- Dashboard and CLI are clients of the Admin API.
+- The Dashboard is a client of the Admin API; the CLI owns local lifecycle.
 - Capabilities own their data and communicate through contracts.
 - Provider SDKs stay behind ports.
 - Operational visibility is part of the platform.
@@ -24,18 +24,15 @@ visibility ship as first-class platform pieces.
 ## Run locally
 
 ```bash
-cargo run -p boson-server
-cargo run -p boson-cli -- doctor
-npm run dev --prefix apps/dashboard
+boson start
 ```
 
 ## Build an app on Boson
 
 ```bash
-cargo run -p boson-cli -- init my-app --boson-path .
+boson init my-app
 cd my-app
-boson migrate
-boson dev
+boson start
 ```
 
 See [Getting started](/docs/getting-started) and the

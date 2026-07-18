@@ -1,11 +1,12 @@
 ---
 title: Admin API
-description: Operational surface for dashboard and CLI clients.
-order: 5
+description: The authenticated operational API used by the Dashboard.
+order: 10
 ---
 
-The Admin API is the operational control plane. The dashboard and CLI are
-clients of this API — they do not embed server internals.
+The Admin API is the operational control plane. The Dashboard is a client of
+this API and does not embed Server internals. The current CLI focuses on local
+project lifecycle rather than wrapping Admin endpoints.
 
 ## Authentication
 
@@ -23,14 +24,13 @@ Typical Admin surfaces include:
 - Jobs, event log / outbox delivery, and audit trail
 - Notification delivery history
 
-## Clients
+## Use the API
 
 ```bash
-cargo run -p boson-cli -- \
-  --admin-token local-development-token config
-
-npm run dev --prefix apps/dashboard
+curl http://localhost:8080/admin/v1/health \
+  -H 'authorization: Bearer local-development-token'
 ```
 
-Both clients should treat the Admin API as the source of truth for operational
-state.
+The Dashboard uses the configured Boson API URL. Custom operator tools should
+treat the Admin API as the source of truth and request only the scopes they
+need.
