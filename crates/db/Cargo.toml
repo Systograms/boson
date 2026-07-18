@@ -1,0 +1,13 @@
+[package]
+name = "boson-db"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+boson-events = { version = "0.1.0", path = "../events" }
+boson-kernel = { version = "0.1.0", path = "../kernel" }
+chrono = { version = "0.4.45", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "json", "migrate"] }
+thiserror = "2.0.18"
+tracing = "0.1.44"

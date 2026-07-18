@@ -1,0 +1,20 @@
+app:
+  name: boson
+  environment: development
+
+http:
+  host: 0.0.0.0
+  port: 8080
+
+database:
+  url: postgres://boson:boson@localhost:5432/boson
+  max_connections: 10
+  connect_on_boot: false
+  run_migrations: false
+
+telemetry:
+  log_level: info
+  json: false
+
+admin:
+  bootstrap_token: ""

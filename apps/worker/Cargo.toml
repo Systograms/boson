@@ -1,0 +1,12 @@
+[package]
+name = "boson-worker"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.103"
+boson-db = { version = "0.1.0", path = "../../crates/db" }
+boson-kernel = { version = "0.1.0", path = "../../crates/kernel" }
+boson-ops = { version = "0.1.0", path = "../../crates/ops" }
+tokio = { version = "1.53.0", features = ["full"] }
+tracing = "0.1.44"

@@ -1,0 +1,18 @@
+[package]
+name = "boson-server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.103"
+axum = "0.8.9"
+boson-db = { version = "0.1.0", path = "../../crates/db" }
+boson-kernel = { version = "0.1.0", path = "../../crates/kernel" }
+boson-ops = { version = "0.1.0", path = "../../crates/ops" }
+chrono = "0.4.45"
+http = "1.4.2"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+tokio = { version = "1.53.0", features = ["full"] }
+tower-http = { version = "0.7.0", features = ["trace", "cors", "request-id"] }
+tracing = "0.1.44"
