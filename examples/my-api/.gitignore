@@ -1,0 +1,6 @@
+/target
+/data
+.boson/run/
+.boson/logs/
+.env
+.DS_Store

@@ -1,105 +1,66 @@
-mod client;
 mod commands;
 mod project;
 mod templates;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use client::AdminClient;
 
 #[derive(Debug, Parser)]
-#[command(name = "boson", version, about = "Boson platform developer CLI")]
+#[command(name = "boson", version, about = "Run and manage a Boson project")]
 struct Cli {
-    #[arg(long, env = "BOSON_URL", default_value = "http://localhost:8080")]
-    server: String,
-    #[arg(long, env = "BOSON_ADMIN_TOKEN")]
-    admin_token: Option<String>,
     #[command(subcommand)]
     command: Command,
 }
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Check prerequisites, project metadata, and server health.
-    Doctor,
-    /// Read the redacted effective server configuration.
-    Config,
-    /// Print the server's operational overview.
-    Overview,
-    /// Scaffold a standalone Boson application workspace.
+    /// Create a minimal standalone Boson project.
     Init {
-        /// Application name (kebab-case).
         name: String,
-        /// Destination directory. Defaults to `./<name>`.
         #[arg(long)]
         path: Option<String>,
-        /// Path to a local Boson checkout used for path dependencies.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         boson_path: Option<String>,
-        /// Git URL for Boson dependencies. Ignored when `--boson-path` is set.
-        #[arg(long, default_value = "https://github.com/Systograms/boson")]
+        #[arg(
+            long,
+            default_value = "https://github.com/Systograms/boson",
+            hide = true
+        )]
         boson_git: String,
-        /// Git branch/tag/rev for `--boson-git`.
-        #[arg(long, default_value = "main")]
+        #[arg(long, default_value = "main", hide = true)]
         boson_rev: String,
-        /// Overwrite an existing non-empty destination.
         #[arg(long)]
         force: bool,
     },
-    /// Apply platform and project capability migrations.
-    ///
-    /// This is a narrow operational exception to the CLI's otherwise API-only
-    /// rule: migrations must touch PostgreSQL directly.
-    Migrate {
-        /// Config file path. Defaults to `BOSON_CONFIG` or `config/local.yaml`.
-        #[arg(long)]
-        config: Option<String>,
+    /// Start the entire Boson project and stream unified logs.
+    Start,
+    /// Gracefully stop everything started by Boson.
+    Stop,
+    /// Show services, ports, health, and versions.
+    Status,
+    /// Tail unified logs or one service.
+    Logs {
+        service: Option<String>,
+        #[arg(short, long)]
+        follow: bool,
+        #[arg(short = 'n', long, default_value_t = 100)]
+        lines: usize,
     },
-    /// Start Postgres (via Compose), migrate, then run server and worker.
-    Dev {
-        /// Config file path. Defaults to `BOSON_CONFIG` or `config/local.yaml`.
+    /// Check the machine and print actionable fixes.
+    Doctor,
+    /// Print the effective configuration with secrets redacted.
+    Config,
+    /// Update the Boson binary to the latest release.
+    Update {
         #[arg(long)]
-        config: Option<String>,
-        /// Skip starting Compose Postgres.
-        #[arg(long)]
-        no_db: bool,
-    },
-    /// Manage persistent platform administrator identities.
-    Admin {
-        #[command(subcommand)]
-        command: AdminCommand,
-    },
-}
-
-#[derive(Debug, Subcommand)]
-enum AdminCommand {
-    /// Create an administrator and issue its first API key.
-    Create {
-        #[arg(long)]
-        email: String,
-        #[arg(long)]
-        display_name: String,
-        #[arg(long, default_value = "default")]
-        key_name: String,
+        check: bool,
     },
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    let client = AdminClient::new(cli.server.clone(), cli.admin_token.clone());
     match cli.command {
-        Command::Doctor => commands::doctor::run(&client).await,
-        Command::Config => {
-            let body = client.get("config").await?;
-            println!("{}", serde_json::to_string_pretty(&body)?);
-            Ok(())
-        }
-        Command::Overview => {
-            let body = client.get("overview").await?;
-            println!("{}", serde_json::to_string_pretty(&body)?);
-            Ok(())
-        }
         Command::Init {
             name,
             path,
@@ -115,28 +76,16 @@ async fn main() -> Result<()> {
             boson_rev,
             force,
         }),
-        Command::Migrate { config } => commands::migrate::run(config).await,
-        Command::Dev { config, no_db } => commands::dev::run(config, no_db).await,
-        Command::Admin {
-            command:
-                AdminCommand::Create {
-                    email,
-                    display_name,
-                    key_name,
-                },
-        } => {
-            let body = client
-                .post(
-                    "admins",
-                    serde_json::json!({
-                        "email": email,
-                        "display_name": display_name,
-                        "key_name": key_name
-                    }),
-                )
-                .await?;
-            println!("{}", serde_json::to_string_pretty(&body)?);
-            Ok(())
-        }
+        Command::Start => commands::lifecycle::start().await,
+        Command::Stop => commands::lifecycle::stop().await,
+        Command::Status => commands::lifecycle::status().await,
+        Command::Logs {
+            service,
+            follow,
+            lines,
+        } => commands::lifecycle::logs(service, follow, lines).await,
+        Command::Doctor => commands::doctor::run().await,
+        Command::Config => commands::config::run(),
+        Command::Update { check } => commands::update::run(check).await,
     }
 }

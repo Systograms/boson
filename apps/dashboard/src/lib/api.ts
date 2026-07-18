@@ -1,5 +1,15 @@
+declare global {
+  interface Window {
+    __BOSON_CONFIG__?: {
+      apiUrl?: string
+    }
+  }
+}
+
 export const SERVER_URL: string =
-  import.meta.env.VITE_BOSON_URL ?? 'http://localhost:8080'
+  window.__BOSON_CONFIG__?.apiUrl ??
+  import.meta.env.VITE_BOSON_URL ??
+  'http://localhost:8080'
 
 const TOKEN_KEY = 'boson.admin_token'
 

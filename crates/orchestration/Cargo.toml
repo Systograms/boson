@@ -1,0 +1,27 @@
+[package]
+name = "boson-orchestration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Local lifecycle orchestration for Boson projects"
+
+[dependencies]
+anyhow = "1.0.103"
+async-trait = "0.1.89"
+boson-kernel = { version = "0.1.0", path = "../kernel" }
+chrono = { version = "0.4.45", features = ["serde"] }
+fs2 = "0.4.3"
+nix = { version = "0.31.1", features = ["signal", "process"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+thiserror = "2.0.18"
+tokio = { version = "1.53.0", features = ["full"] }
+toml = "0.9.5"
+
+[dev-dependencies]
+tempfile = "3.20.0"
+
+[lints]
+workspace = true

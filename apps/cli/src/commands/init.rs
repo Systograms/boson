@@ -58,8 +58,7 @@ pub fn run(args: InitArgs) -> Result<()> {
     println!();
     println!("Next steps:");
     println!("  cd {}", destination.display());
-    println!("  boson migrate");
-    println!("  boson dev");
+    println!("  boson start");
     Ok(())
 }
 
@@ -114,7 +113,14 @@ mod tests {
         })
         .unwrap();
         assert!(dest.join(".boson/project.toml").is_file());
+        assert!(dest.join(".boson/config.yaml").is_file());
+        assert!(!dest.join("config").exists());
         assert!(dest.join("capabilities/items/src/lib.rs").is_file());
+        let readme = fs::read_to_string(dest.join("README.md")).unwrap();
+        assert!(readme.contains("boson start"));
+        assert!(!readme.contains("docker compose"));
+        let compose = fs::read_to_string(dest.join("compose.yaml")).unwrap();
+        assert!(compose.contains("boson-dashboard:0.1.0"));
         let cargo = fs::read_to_string(dest.join("apps/server/Cargo.toml")).unwrap();
         assert!(cargo.contains("crates/runtime"));
         let items = fs::read_to_string(dest.join("capabilities/items/Cargo.toml")).unwrap();

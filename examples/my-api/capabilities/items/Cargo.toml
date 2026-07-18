@@ -1,0 +1,17 @@
+[package]
+name = "my_api_items"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow = "1.0.103"
+async-trait = "0.1.89"
+axum = "0.8.9"
+boson-sdk = { version = "0.1.0", path = "/Volumes/External/boson/crates/sdk" }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+thiserror = "2.0.18"
+tracing = "0.1.44"
+
+[lints]
+workspace = true

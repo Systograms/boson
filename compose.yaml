@@ -15,66 +15,17 @@ services:
       timeout: 3s
       retries: 10
 
-  server:
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile
-    environment:
-      BOSON__DATABASE__URL: postgres://boson:boson@postgres:5432/boson
-      BOSON__DATABASE__CONNECT_ON_BOOT: "true"
-      BOSON__DATABASE__RUN_MIGRATIONS: "true"
-      BOSON__ADMIN__BOOTSTRAP_TOKEN: local-development-token
-      BOSON__AUTH__JWT_SECRET: local-development-jwt-secret
-      BOSON__STORAGE__LOCAL_ROOT: /var/lib/boson/storage
-      BOSON__MAIL__LOCAL_ROOT: /var/lib/boson/mail
-      BOSON__QUEUE__PROVIDER: postgres
-      BOSON__TELEMETRY__JSON: "true"
-    ports:
-      - "8080:8080"
-    volumes:
-      - boson-storage:/var/lib/boson/storage
-      - boson-mail:/var/lib/boson/mail
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  worker:
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile
-    entrypoint: ["boson-worker"]
-    environment:
-      BOSON__DATABASE__URL: postgres://boson:boson@postgres:5432/boson
-      BOSON__DATABASE__CONNECT_ON_BOOT: "true"
-      BOSON__DATABASE__RUN_MIGRATIONS: "false"
-      BOSON__ADMIN__BOOTSTRAP_TOKEN: local-development-token
-      BOSON__AUTH__JWT_SECRET: local-development-jwt-secret
-      BOSON__STORAGE__LOCAL_ROOT: /var/lib/boson/storage
-      BOSON__MAIL__LOCAL_ROOT: /var/lib/boson/mail
-      BOSON__QUEUE__PROVIDER: postgres
-      BOSON__QUEUE__POLL_INTERVAL_MS: "1000"
-      BOSON__QUEUE__BATCH_SIZE: "25"
-      BOSON__QUEUE__VISIBILITY_TIMEOUT_SECONDS: "60"
-      BOSON__QUEUE__MAX_ATTEMPTS: "5"
-    volumes:
-      - boson-storage:/var/lib/boson/storage
-      - boson-mail:/var/lib/boson/mail
-    depends_on:
-      server:
-        condition: service_started
-
   dashboard:
     build:
       context: .
       dockerfile: deploy/Dockerfile.dashboard
-      args:
-        VITE_BOSON_URL: http://localhost:8080
+    environment:
+      BOSON_API_URL: http://localhost:8080
     ports:
       - "3000:80"
     depends_on:
-      - server
+      postgres:
+        condition: service_healthy
 
 volumes:
   boson-postgres:
-  boson-storage:
-  boson-mail:

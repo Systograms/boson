@@ -1,0 +1,87 @@
+---
+title: Example project
+description: A complete standalone capability built on the public SDK.
+order: 8
+---
+
+`examples/my-api` is the reference standalone Boson application. It has the
+exact workspace shape produced by `boson init`, including the starter `items`
+capability, so it doubles as a living scaffold contract.
+
+## Run it
+
+```bash
+cd examples/my-api
+boson start
+```
+
+Boson starts PostgreSQL and the Dashboard, applies platform and capability
+migrations, launches `my_api_server` and `my_api_worker`, and streams unified
+logs.
+
+Local endpoints:
+
+- Server: `http://localhost:8080`
+- Dashboard: `http://localhost:3000`
+- PostgreSQL: `localhost:5432`
+- Admin token: `local-development-token`
+
+## What it demonstrates
+
+The `ItemsCapability` implements:
+
+- `POST /v1/items` and `GET /v1/items`
+- owner-scoped queries using `AuthenticatedUser`
+- `GET /admin/v1/items` protected by `items:read`
+- typed `capabilities.items.max_items` configuration
+- capability-owned migrations in the `items` schema
+- a transactional `items.item_created.v1` event
+- an idempotent event consumer
+- a capability health check
+
+## Transactional events
+
+Creating an item writes the row and event in one database transaction:
+
+```rust
+let mut tx = database.pool().begin().await?;
+
+// Insert the domain row using the same transaction.
+
+publish_in_tx(
+    &mut tx,
+    &EventEnvelope::new(
+        "items.item_created.v1",
+        json!({
+            "id": id,
+            "owner_id": user.user_id,
+            "request_id": context.request_id,
+        }),
+    ),
+)
+.await?;
+
+tx.commit().await?;
+```
+
+The Worker delivers the immutable event at least once. Consumers must therefore
+be idempotent.
+
+## Application and Admin boundaries
+
+Application routes use `user_auth_middleware` and receive an
+`AuthenticatedUser`. The Admin route receives an `AdminPrincipal` and calls
+`require_scope("items:read")`.
+
+End-user credentials never authorize Admin routes. This separation is a stable
+platform boundary.
+
+## Use it as a template
+
+When creating a new capability:
+
+1. Copy the descriptor, constructor, and router structure.
+2. Give the capability its own schema and migration directory.
+3. Put settings below `capabilities.<name>`.
+4. Publish versioned facts inside domain transactions.
+5. Register the same capability in migrate, Server, and Worker builders.

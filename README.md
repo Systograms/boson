@@ -15,7 +15,7 @@ capabilities; billing remains out of scope.
 | `apps/server` | HTTP host for public and Admin APIs |
 | `apps/worker` | Background processing and worker heartbeats |
 | `apps/dashboard` | Optional React client of the Admin API |
-| `apps/cli` | Developer CLI (`init`, `migrate`, `dev`, `doctor`, Admin helpers) |
+| `apps/cli` | One-command local lifecycle (`init`, `start`, `stop`, `status`, `logs`, `doctor`) |
 | `apps/website` | Marketing site and documentation (Vercel) |
 
 ## Platform crates
@@ -26,6 +26,7 @@ capabilities; billing remains out of scope.
 | `boson-capability` | Capability registration, dependency order, routes, jobs |
 | `boson-sdk` | Public Capability SDK facade for application authors |
 | `boson-runtime` | Shared server/worker composition and embedded migrations |
+| `boson-orchestration` | Local infrastructure, process, state, health, and log lifecycle |
 | `boson-ports` | Provider-agnostic storage, queue, mailer, health contracts |
 | `boson-events` | Versioned event envelope and consumer contract |
 | `boson-db` | PostgreSQL pool, migrations, outbox, worker heartbeat |
@@ -54,37 +55,12 @@ dashboard / CLI → Admin API → server → providers
 
 Provider SDK types must not appear in capabilities or public contracts.
 
-## Run the foundation locally
+## Run Boson locally
 
-### Without PostgreSQL
-
-The local config disables database startup, so the server can be explored
-immediately:
+The canonical developer workflow is one command:
 
 ```bash
-cargo run -p boson-server
-```
-
-Then:
-
-```bash
-curl http://localhost:8080/healthz
-cargo run -p boson-cli -- doctor
-cargo run -p boson-cli -- \
-  --admin-token local-development-token config
-```
-
-Run the web applications:
-
-```bash
-npm run dev --prefix apps/dashboard
-npm run dev --prefix apps/website
-```
-
-### Complete local stack
-
-```bash
-docker compose up --build
+boson start
 ```
 
 - Server: <http://localhost:8080>
@@ -92,10 +68,13 @@ docker compose up --build
 - PostgreSQL: `localhost:5432`
 - Development Admin token: `local-development-token`
 
-The compose stack enables PostgreSQL, applies migrations, starts the worker,
-and serves the dashboard. Uploaded files persist in the `boson-storage` named
-volume, mounted at `/var/lib/boson/storage` in the server and worker.
-Development email persists in the `boson-mail` volume as JSON messages.
+Boson verifies prerequisites, starts managed infrastructure, waits for health,
+applies pending migrations, builds and starts the Server and Worker, serves the
+Dashboard, and streams prefixed logs. Ctrl+C gracefully stops the complete
+stack while preserving local data.
+
+Use `boson status`, `boson logs`, and `boson doctor` when needed. Developers do
+not need to invoke Docker, Cargo, npm, or individual service binaries.
 
 ## APIs currently available
 
@@ -168,7 +147,7 @@ Admin (Bearer token required):
 Configuration is loaded in this order:
 
 1. Typed defaults
-2. Optional YAML file (`BOSON_CONFIG`, default `config/local.yaml`)
+2. Project YAML file (`.boson/config.yaml`, or `BOSON_CONFIG`)
 3. Environment variables prefixed with `BOSON__`
 
 Example:
@@ -231,12 +210,9 @@ Standalone apps depend on `boson-runtime` and `boson-sdk`:
 ```bash
 cargo run -p boson-cli -- init my-app --boson-path .
 cd my-app
-cargo run -p boson-cli --manifest-path ../Cargo.toml -- migrate
-cargo run -p boson-cli --manifest-path ../Cargo.toml -- dev
+boson start
 ```
 
-`boson migrate` applies platform migrations plus capability-owned SQL
-directories (each capability uses its own `_sqlx_migrations_<name>` table).
-This is a documented exception to the CLI's otherwise API-only rule. See
-`examples/todo` for a complete reference app and the website docs under
-Getting started / Capability SDK.
+The CLI owns local orchestration. Infrastructure, migrations, process
+supervision, health gates, and unified logs remain Boson implementation
+details. See `examples/my-api` for a complete reference app.

@@ -319,8 +319,7 @@ impl PreparedRuntime {
                         tracing::error!(%error, "event dispatch cycle failed");
                     }
                 }
-                signal = tokio::signal::ctrl_c() => {
-                    signal.context("listen for worker shutdown")?;
+                () = shutdown_signal() => {
                     tracing::info!("worker shutdown signal received");
                     break;
                 }

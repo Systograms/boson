@@ -1,0 +1,10 @@
+[package]
+name = "my_api_migrate"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow = "1.0.103"
+my_api_items = { path = "../../capabilities/items" }
+boson-runtime = { version = "0.1.0", path = "/Volumes/External/boson/crates/runtime" }
+tokio = { version = "1.53.0", features = ["full"] }

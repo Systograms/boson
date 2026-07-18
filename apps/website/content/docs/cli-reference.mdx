@@ -17,10 +17,8 @@ boson init my-app
 boson init my-app --path ./products/my-app
 ```
 
-By default, generated `boson-runtime` and `boson-sdk` dependencies point at the
-Boson Git repository and `main`. `--force` allows generated files to be written
-into a non-empty destination. Internal source override flags are hidden and
-intended for Boson contributors.
+`--force` allows generated files to be written into a non-empty destination.
+Source and framework details remain hidden from the normal command surface.
 
 ## `boson start`
 
@@ -30,7 +28,8 @@ boson start
 
 The command remains attached and performs the complete local startup sequence:
 
-1. Validate Rust, Docker, the project manifest, and configuration.
+1. Validate required build tools, managed infrastructure, project identity,
+   ports, and configuration.
 2. Start managed PostgreSQL and Dashboard services.
 3. Wait for infrastructure health.
 4. Build migrate, Server, and Worker packages.
@@ -79,9 +78,9 @@ tail (default: 100).
 boson doctor
 ```
 
-Checks project discovery, configuration, Rust, Docker, `compose.yaml`, and
-local ports. Failures include a concrete `fix:` instruction. Occupied ports are
-warnings because an existing Boson stack may already own them.
+Checks project discovery, configuration, build tools, managed infrastructure,
+and local ports. Failures include a concrete `fix:` instruction. Occupied
+ports are warnings because an existing Boson stack may already own them.
 
 ## `boson config`
 
@@ -99,9 +98,8 @@ boson update --check
 boson update
 ```
 
-Checks the latest GitHub release. Without `--check`, Cargo installs the matching
-`boson-cli` release tag through Cargo (`cargo install --git … --tag <tag>
-boson-cli --force`).
+Checks the latest GitHub release. Without `--check`, Boson installs the matching
+CLI release.
 
 ## Removed commands
 

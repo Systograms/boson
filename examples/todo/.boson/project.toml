@@ -1,5 +1,0 @@
-name = "todo"
-package_prefix = "todo"
-migrate_package = "todo_migrate"
-server_package = "todo_server"
-worker_package = "todo_worker"

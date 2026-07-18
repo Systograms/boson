@@ -2,6 +2,7 @@
 members = [
     "apps/server",
     "apps/worker",
+    "apps/migrate",
     "apps/cli",
     "adapters/storage-local",
     "adapters/queue-postgres",
@@ -14,6 +15,7 @@ members = [
     "crates/capability",
     "crates/sdk",
     "crates/runtime",
+    "crates/orchestration",
     "crates/admin",
     "crates/audit",
     "crates/notifications",

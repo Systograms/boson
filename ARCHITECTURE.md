@@ -69,8 +69,13 @@ event/job schemas, middleware slots, `boson-sdk`, `boson-runtime::Builder`, and
 capability registration. Internal Axum, SQLx, and provider types are not
 platform contracts.
 
-## CLI exceptions
+## Local orchestration
 
-Dashboard and CLI are API clients. The sole intentional exception is
-`boson migrate`, which applies SQL migrations directly for local and CI
-workflows.
+`boson-orchestration` is the private local control plane behind the small CLI
+surface. It manages infrastructure, migration binaries, service process
+groups, health gates, lifecycle state, and unified logs. Application binaries
+remain thin `boson-runtime` launchers.
+
+Developers interact with `boson start`, `stop`, `status`, `logs`, and `doctor`;
+Docker, Cargo, npm, migration commands, and individual services are
+implementation details.

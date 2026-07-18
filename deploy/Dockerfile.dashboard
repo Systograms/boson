@@ -8,6 +8,7 @@ ENV VITE_BOSON_URL=$VITE_BOSON_URL
 RUN npm run build
 
 FROM nginx:1.29-alpine
-COPY deploy/nginx-dashboard.conf /etc/nginx/conf.d/default.conf
+ENV BOSON_API_URL=http://localhost:8080
+COPY deploy/nginx-dashboard.conf /etc/nginx/templates/default.conf.template
 COPY --from=builder /app/dist /usr/share/nginx/html
 EXPOSE 80

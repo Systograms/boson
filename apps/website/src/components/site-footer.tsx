@@ -17,7 +17,7 @@ const FOOTER_LINKS: { title: string; links: { label: string; href: string; exter
       { label: "Local lifecycle", href: "/docs/local-lifecycle" },
       { label: "Configuration", href: "/docs/configuration" },
       { label: "Capability SDK", href: "/docs/extensions" },
-      { label: "Todo example", href: "/docs/todo-example" },
+      { label: "Example project", href: "/docs/example-project" },
     ],
   },
   {
