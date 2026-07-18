@@ -1,5 +1,12 @@
-import { Fragment, useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, RefreshCw, Search } from 'lucide-react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
+import {
+  ChevronDown,
+  ChevronRight,
+  RefreshCw,
+  Search,
+  Workflow,
+  ListTree,
+} from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -11,6 +18,13 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Table,
   TableBody,
   TableCell,
@@ -20,20 +34,20 @@ import {
 } from '@/components/ui/table'
 import { HttpStatusBadge } from '@/components/status-badge'
 import { useAdminQuery } from '@/hooks/use-admin-query'
-import type { RequestTrace } from '@/lib/api'
+import { adminGet, type RequestDetail, type RequestTrace } from '@/lib/api'
 
 export function RequestsPage() {
   const { data, loading, refresh, updatedAt } = useAdminQuery<{
     data: RequestTrace[]
-  }>(
-    'requests',
-    10_000,
-  )
+  }>('requests', 10_000)
   const traces = useMemo(() => data?.data ?? [], [data])
   const [query, setQuery] = useState('')
   const [method, setMethod] = useState('all')
   const [status, setStatus] = useState('all')
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [details, setDetails] = useState<Record<string, RequestDetail>>({})
+  const [detailLoading, setDetailLoading] = useState<string | null>(null)
+  const [detailError, setDetailError] = useState<string | null>(null)
 
   const methods = useMemo(
     () => [...new Set(traces.map((trace) => trace.method))].sort(),
@@ -54,6 +68,33 @@ export function RequestsPage() {
     })
   }, [method, query, status, traces])
 
+  useEffect(() => {
+    if (!expanded || details[expanded]) return
+    let cancelled = false
+    setDetailLoading(expanded)
+    setDetailError(null)
+    void adminGet<{ data: RequestDetail }>(`requests/${expanded}`)
+      .then((response) => {
+        if (cancelled) return
+        setDetails((previous) => ({
+          ...previous,
+          [expanded]: response.data,
+        }))
+      })
+      .catch((reason: unknown) => {
+        if (cancelled) return
+        setDetailError(
+          reason instanceof Error ? reason.message : 'Failed to load detail',
+        )
+      })
+      .finally(() => {
+        if (!cancelled) setDetailLoading(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [details, expanded])
+
   function durationClass(duration: number): string {
     if (duration >= 1000) return 'text-destructive'
     if (duration >= 300) return 'text-amber-600 dark:text-amber-400'
@@ -66,7 +107,7 @@ export function RequestsPage() {
         <div>
           <CardTitle className="text-base">Request traces</CardTitle>
           <CardDescription>
-            The most recent requests served by the platform, newest first.
+            Durable request history with correlated outbox events and jobs.
           </CardDescription>
         </div>
         <div className="flex items-center gap-3">
@@ -106,31 +147,31 @@ export function RequestsPage() {
               className="pl-9"
             />
           </div>
-          <select
-            value={method}
-            onChange={(event) => setMethod(event.target.value)}
-            aria-label="Filter by method"
-            className="h-9 rounded-3xl border border-transparent bg-input/50 px-3 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/30"
-          >
-            <option value="all">All methods</option>
-            {methods.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-          <select
-            value={status}
-            onChange={(event) => setStatus(event.target.value)}
-            aria-label="Filter by status"
-            className="h-9 rounded-3xl border border-transparent bg-input/50 px-3 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/30"
-          >
-            <option value="all">All statuses</option>
-            <option value="2">2xx success</option>
-            <option value="3">3xx redirect</option>
-            <option value="4">4xx client error</option>
-            <option value="5">5xx server error</option>
-          </select>
+          <Select value={method} onValueChange={setMethod}>
+            <SelectTrigger aria-label="Filter by method">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All methods</SelectItem>
+              {methods.map((item) => (
+                <SelectItem key={item} value={item}>
+                  {item}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger aria-label="Filter by status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="2">2xx success</SelectItem>
+              <SelectItem value="3">3xx redirect</SelectItem>
+              <SelectItem value="4">4xx client error</SelectItem>
+              <SelectItem value="5">5xx server error</SelectItem>
+            </SelectContent>
+          </Select>
           <Badge variant="secondary" className="justify-center tabular-nums">
             {filtered.length} / {traces.length}
           </Badge>
@@ -156,6 +197,7 @@ export function RequestsPage() {
             <TableBody>
               {filtered.map((trace) => {
                 const isExpanded = expanded === trace.request_id
+                const detail = details[trace.request_id]
                 return (
                   <Fragment key={trace.request_id}>
                     <TableRow
@@ -197,32 +239,131 @@ export function RequestsPage() {
                     {isExpanded && (
                       <TableRow key={`${trace.request_id}-details`}>
                         <TableCell colSpan={6} className="bg-muted/30">
-                          <dl className="grid gap-3 py-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
-                            <div>
-                              <dt className="text-muted-foreground">Full path</dt>
-                              <dd className="mt-1 break-all font-mono">
-                                {trace.path}
-                              </dd>
-                            </div>
-                            <div>
-                              <dt className="text-muted-foreground">Request ID</dt>
-                              <dd className="mt-1 break-all font-mono">
-                                {trace.request_id}
-                              </dd>
-                            </div>
-                            <div>
-                              <dt className="text-muted-foreground">Started</dt>
-                              <dd className="mt-1">
-                                {new Date(trace.started_at).toLocaleString()}
-                              </dd>
-                            </div>
-                            <div>
-                              <dt className="text-muted-foreground">Duration</dt>
-                              <dd className="mt-1 font-medium tabular-nums">
-                                {trace.duration_ms} ms
-                              </dd>
-                            </div>
-                          </dl>
+                          <div className="space-y-4 py-2">
+                            <dl className="grid gap-3 text-xs sm:grid-cols-2 xl:grid-cols-4">
+                              <div>
+                                <dt className="text-muted-foreground">Full path</dt>
+                                <dd className="mt-1 break-all font-mono">
+                                  {trace.path}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="text-muted-foreground">
+                                  Request ID
+                                </dt>
+                                <dd className="mt-1 break-all font-mono">
+                                  {trace.request_id}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="text-muted-foreground">Started</dt>
+                                <dd className="mt-1">
+                                  {new Date(trace.started_at).toLocaleString()}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="text-muted-foreground">Duration</dt>
+                                <dd className="mt-1 font-medium tabular-nums">
+                                  {trace.duration_ms} ms
+                                </dd>
+                              </div>
+                            </dl>
+
+                            {detailLoading === trace.request_id && (
+                              <p className="text-xs text-muted-foreground">
+                                Loading correlated timeline…
+                              </p>
+                            )}
+                            {detailError &&
+                              detailLoading !== trace.request_id &&
+                              !detail && (
+                                <p className="text-xs text-destructive">
+                                  {detailError}
+                                </p>
+                              )}
+                            {detail && (
+                              <div className="grid gap-4 lg:grid-cols-2">
+                                <div>
+                                  <h3 className="mb-2 flex items-center gap-1.5 text-xs font-medium">
+                                    <Workflow className="size-3.5 text-muted-foreground" />
+                                    Events
+                                    <Badge variant="secondary" className="ml-1">
+                                      {detail.events.length}
+                                    </Badge>
+                                  </h3>
+                                  {detail.events.length === 0 ? (
+                                    <p className="text-xs text-muted-foreground">
+                                      No outbox events for this request.
+                                    </p>
+                                  ) : (
+                                    <ul className="space-y-2">
+                                      {detail.events.map((event) => (
+                                        <li
+                                          key={event.id}
+                                          className="rounded-lg bg-background/80 px-3 py-2 text-xs"
+                                        >
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="font-mono">
+                                              {event.topic}
+                                            </span>
+                                            <Badge variant="outline">
+                                              {event.status}
+                                            </Badge>
+                                          </div>
+                                          <p className="mt-1 text-muted-foreground">
+                                            {new Date(
+                                              event.occurred_at,
+                                            ).toLocaleString()}
+                                            {event.last_error
+                                              ? ` · ${event.last_error}`
+                                              : ''}
+                                          </p>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </div>
+                                <div>
+                                  <h3 className="mb-2 flex items-center gap-1.5 text-xs font-medium">
+                                    <ListTree className="size-3.5 text-muted-foreground" />
+                                    Jobs
+                                    <Badge variant="secondary" className="ml-1">
+                                      {detail.jobs.length}
+                                    </Badge>
+                                  </h3>
+                                  {detail.jobs.length === 0 ? (
+                                    <p className="text-xs text-muted-foreground">
+                                      No jobs for this request.
+                                    </p>
+                                  ) : (
+                                    <ul className="space-y-2">
+                                      {detail.jobs.map((job) => (
+                                        <li
+                                          key={job.id}
+                                          className="rounded-lg bg-background/80 px-3 py-2 text-xs"
+                                        >
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="font-mono">
+                                              {job.topic}
+                                            </span>
+                                            <Badge variant="outline">
+                                              {job.status}
+                                            </Badge>
+                                          </div>
+                                          <p className="mt-1 text-muted-foreground">
+                                            attempts {job.attempts}
+                                            {job.last_error
+                                              ? ` · ${job.last_error}`
+                                              : ''}
+                                          </p>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     )}

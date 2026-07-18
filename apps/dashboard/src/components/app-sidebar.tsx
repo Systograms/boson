@@ -1,7 +1,9 @@
+import { NavLink, useLocation } from 'react-router-dom'
 import {
   Activity,
   ArchiveX,
   Boxes,
+  Database,
   FileClock,
   Gauge,
   HeartPulse,
@@ -20,48 +22,74 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from '@/components/ui/sidebar'
 
 export type PageId =
   | 'overview'
   | 'health'
   | 'requests'
+  | 'database'
   | 'administrators'
   | 'organizations'
+  | 'users'
+  | 'storage'
   | 'configuration'
   | 'events'
   | 'jobs'
+  | 'audit'
 
-const OPERATIONS: Array<{ id: PageId; title: string; icon: typeof Gauge }> = [
-  { id: 'overview', title: 'Overview', icon: Gauge },
-  { id: 'health', title: 'Health', icon: HeartPulse },
-  { id: 'requests', title: 'Requests', icon: Activity },
-  { id: 'administrators', title: 'Administrators', icon: ShieldCheck },
-  { id: 'configuration', title: 'Configuration', icon: Settings2 },
+type NavItem = { path: string; title: string; icon: typeof Gauge }
+
+const OPERATIONS: NavItem[] = [
+  { path: '/', title: 'Overview', icon: Gauge },
+  { path: '/health', title: 'Health', icon: HeartPulse },
+  { path: '/requests', title: 'Requests', icon: Activity },
+  { path: '/database', title: 'Database', icon: Database },
+  { path: '/administrators', title: 'Administrators', icon: ShieldCheck },
+  { path: '/configuration', title: 'Configuration', icon: Settings2 },
 ]
 
-const PLATFORM: Array<{ id: PageId; title: string; icon: typeof Gauge }> = [
-  { id: 'organizations', title: 'Organizations', icon: Users },
-  { id: 'events', title: 'Events', icon: Workflow },
-  { id: 'jobs', title: 'Jobs', icon: ListTree },
+const PLATFORM: NavItem[] = [
+  { path: '/users', title: 'Users', icon: Users },
+  { path: '/organizations', title: 'Organizations', icon: Users },
+  { path: '/storage', title: 'Storage', icon: ArchiveX },
+  { path: '/events', title: 'Events', icon: Workflow },
+  { path: '/jobs', title: 'Jobs', icon: ListTree },
+  { path: '/audit', title: 'Audit', icon: FileClock },
 ]
 
-const COMING_SOON = [
-  { title: 'Users', icon: Users },
-  { title: 'Storage', icon: ArchiveX },
-  { title: 'Audit', icon: FileClock },
-]
+function NavMenu({ items }: { items: NavItem[] }) {
+  const location = useLocation()
+  const { isMobile, setOpenMobile } = useSidebar()
 
-export function AppSidebar({
-  page,
-  onNavigate,
-}: {
-  page: PageId
-  onNavigate: (page: PageId) => void
-}) {
+  return (
+    <SidebarMenu>
+      {items.map((item) => (
+        <SidebarMenuItem key={item.path}>
+          <SidebarMenuButton
+            asChild
+            isActive={location.pathname === item.path}
+          >
+            <NavLink
+              to={item.path}
+              onClick={() => {
+                if (isMobile) setOpenMobile(false)
+              }}
+            >
+              <item.icon />
+              <span>{item.title}</span>
+            </NavLink>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      ))}
+    </SidebarMenu>
+  )
+}
+
+export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader>
@@ -79,45 +107,13 @@ export function AppSidebar({
         <SidebarGroup>
           <SidebarGroupLabel>Operations</SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
-              {OPERATIONS.map((item) => (
-                <SidebarMenuItem key={item.id}>
-                  <SidebarMenuButton
-                    isActive={page === item.id}
-                    onClick={() => onNavigate(item.id)}
-                  >
-                    <item.icon />
-                    <span>{item.title}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
+            <NavMenu items={OPERATIONS} />
           </SidebarGroupContent>
         </SidebarGroup>
         <SidebarGroup>
           <SidebarGroupLabel>Platform</SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
-              {PLATFORM.map((item) => (
-                <SidebarMenuItem key={item.id}>
-                  <SidebarMenuButton isActive={page === item.id} onClick={() => onNavigate(item.id)}>
-                    <item.icon />
-                    <span>{item.title}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-              {COMING_SOON.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton disabled className="opacity-60">
-                    <item.icon />
-                    <span>{item.title}</span>
-                  </SidebarMenuButton>
-                  <SidebarMenuBadge className="text-muted-foreground">
-                    soon
-                  </SidebarMenuBadge>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
+            <NavMenu items={PLATFORM} />
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>

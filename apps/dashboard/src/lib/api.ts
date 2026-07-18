@@ -102,6 +102,70 @@ export type RequestTrace = {
   duration_ms: number
 }
 
+export type CorrelatedEvent = {
+  id: string
+  topic: string
+  status: string
+  attempts: number
+  occurred_at: string
+  dispatched_at: string | null
+  last_error: string | null
+}
+
+export type CorrelatedJob = {
+  id: string
+  topic: string
+  status: string
+  attempts: number
+  created_at: string
+  updated_at: string
+  last_error: string | null
+}
+
+export type RequestDetail = {
+  request: RequestTrace
+  events: CorrelatedEvent[]
+  jobs: CorrelatedJob[]
+}
+
+export type EndUser = {
+  id: string
+  email: string
+  display_name: string
+  email_verified_at: string | null
+  created_at: string
+}
+
+export type EndUserSession = {
+  id: string
+  user_id: string
+  expires_at: string
+  revoked_at: string | null
+  last_used_at: string | null
+  created_at: string
+}
+
+export type AdminFile = {
+  id: string
+  owner_id: string
+  filename: string
+  content_type: string
+  size_bytes: number
+  status: string
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+export type AuditEntry = {
+  event_id: string
+  topic: string
+  payload: unknown
+  correlation_id: string | null
+  occurred_at: string
+  recorded_at: string
+}
+
 export type AdminConfig = {
   snapshot_id: string
   effective: Record<string, unknown>
@@ -225,6 +289,78 @@ export type EventDelivery = {
 export type EventDetail = {
   event: EventRecord
   deliveries: EventDelivery[]
+}
+
+export type DatabaseTableRef = {
+  namespace: string
+  name: string
+}
+
+export type DatabaseRowCount = {
+  value: number
+  exact: boolean
+}
+
+export type DatabaseTableSummary = {
+  table: DatabaseTableRef
+  primary_key: string[]
+  row_count: DatabaseRowCount | null
+}
+
+export type DatabaseColumn = {
+  name: string
+  data_type: string
+  nullable: boolean
+  primary_key: boolean
+  redacted: boolean
+  default: string | null
+}
+
+export type DatabaseForeignKey = {
+  name: string
+  columns: string[]
+  referenced_table: DatabaseTableRef
+  referenced_columns: string[]
+}
+
+export type DatabaseTableSchema = {
+  table: DatabaseTableRef
+  columns: DatabaseColumn[]
+  primary_key: string[]
+  foreign_keys: DatabaseForeignKey[]
+  row_count: DatabaseRowCount | null
+}
+
+export type DatabaseCell = {
+  kind:
+    | 'null'
+    | 'boolean'
+    | 'number'
+    | 'text'
+    | 'json'
+    | 'binary'
+    | 'date_time'
+    | 'other'
+    | 'redacted'
+  value: string | null
+}
+
+export type DatabaseRow = {
+  cells: Record<string, DatabaseCell>
+}
+
+export type DatabaseRowPage = {
+  table: DatabaseTableRef
+  columns: DatabaseColumn[]
+  rows: DatabaseRow[]
+  next_cursor: string | null
+}
+
+export type DatabaseInspectorCapabilities = {
+  provider: string
+  supports_namespaces: boolean
+  supports_exact_count: boolean
+  max_page_size: number
 }
 
 export function hasScope(

@@ -2,6 +2,7 @@ use std::{env, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result, bail};
 use boson_admin::AdminCapability;
+use boson_audit::AuditCapability;
 use boson_capability::CapabilityRegistry;
 use boson_db::Database;
 use boson_event_log::EventsCapability;
@@ -37,9 +38,10 @@ async fn main() -> Result<()> {
     capabilities.register(Arc::new(OpsCapability::new(
         Arc::clone(&config),
         Some(database.clone()),
-        OpsState::default(),
+        OpsState::new(Some(database.clone())),
     )))?;
     capabilities.register(Arc::new(AdminCapability::new(Some(database.clone()))))?;
+    capabilities.register(Arc::new(AuditCapability::new(Some(database.clone()))))?;
     let identity = IdentityCapability::new(Some(database.clone()), &config.auth);
     let identity_auth = identity.auth();
     let identity_directory = identity.directory();
@@ -191,7 +193,9 @@ async fn dispatch_events(
     for event in events {
         let matching = consumers
             .iter()
-            .filter(|consumer| consumer.topic() == event.envelope.topic)
+            .filter(|consumer| {
+                consumer.topic() == "*" || consumer.topic() == event.envelope.topic
+            })
             .collect::<Vec<_>>();
         let delivered = database
             .delivered_consumers(event.envelope.id)

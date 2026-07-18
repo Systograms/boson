@@ -48,10 +48,12 @@ import {
 const AVAILABLE_SCOPES = [
   'admins:read',
   'admins:write',
+  'audit:read',
   'identity:read',
   'organizations:read',
   'ops:read',
   'config:read',
+  'database:read',
   'events:read',
   'jobs:read',
   'jobs:write',

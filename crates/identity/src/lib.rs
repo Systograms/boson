@@ -18,7 +18,7 @@ use axum::{
 use boson_admin::AdminPrincipal;
 use boson_capability::{Capability, CapabilityDescriptor};
 use boson_db::Database;
-use boson_kernel::AuthConfig;
+use boson_kernel::{AuthConfig, RequestContext};
 use chrono::{DateTime, Duration, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use rand_core::OsRng;
@@ -329,6 +329,7 @@ struct RefreshRequest {
 
 async fn register(
     State(state): State<IdentityState>,
+    Extension(context): Extension<RequestContext>,
     Json(input): Json<RegisterRequest>,
 ) -> Result<(StatusCode, Json<TokenResponse>), IdentityError> {
     let email = normalize_email(&input.email)?;
@@ -367,6 +368,7 @@ async fn register(
         &mut transaction,
         "identity.user_created.v1",
         json!({ "user_id": user_id, "email": email }),
+        Some(context.request_id),
     )
     .await
     .map_err(unavailable)?;
@@ -393,6 +395,7 @@ async fn register(
 
 async fn login(
     State(state): State<IdentityState>,
+    Extension(context): Extension<RequestContext>,
     Json(input): Json<LoginRequest>,
 ) -> Result<Json<TokenResponse>, IdentityError> {
     let email = normalize_email(&input.email)?;
@@ -420,6 +423,14 @@ async fn login(
         .insert(&mut transaction, user.id)
         .await
         .map_err(unavailable)?;
+    insert_outbox_event(
+        &mut transaction,
+        "identity.user_logged_in.v1",
+        json!({ "user_id": user.id, "session_id": session.id }),
+        Some(context.request_id),
+    )
+    .await
+    .map_err(unavailable)?;
     transaction.commit().await.map_err(unavailable)?;
 
     let access = state.auth.issue(user.id, session.id)?;
@@ -485,6 +496,7 @@ async fn refresh(
 
 async fn logout(
     State(state): State<IdentityState>,
+    Extension(context): Extension<RequestContext>,
     Json(input): Json<RefreshRequest>,
 ) -> Result<StatusCode, IdentityError> {
     let database = require_database(&state)?;
@@ -507,6 +519,7 @@ async fn logout(
             &mut transaction,
             "identity.session_revoked.v1",
             json!({ "session_id": session_id, "user_id": user_id }),
+            Some(context.request_id),
         )
         .await
         .map_err(unavailable)?;
@@ -747,15 +760,17 @@ async fn insert_outbox_event(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     topic: &str,
     payload: serde_json::Value,
+    correlation_id: Option<Uuid>,
 ) -> Result<sqlx::postgres::PgQueryResult, sqlx::Error> {
     sqlx::query(
         "INSERT INTO kernel.outbox
-         (id, topic, payload, occurred_at)
-         VALUES ($1, $2, $3, now())",
+         (id, topic, payload, correlation_id, occurred_at)
+         VALUES ($1, $2, $3, $4, now())",
     )
     .bind(Uuid::now_v7())
     .bind(topic)
     .bind(payload)
+    .bind(correlation_id.map(|id| id.to_string()))
     .execute(&mut **transaction)
     .await
 }

@@ -29,6 +29,7 @@ capabilities; billing remains out of scope.
 | `boson-db` | PostgreSQL pool, migrations, outbox, worker heartbeat |
 | `boson-ops` | Request traces, overview metrics, worker state |
 | `boson-admin` | Platform administrator identities and scoped API keys |
+| `boson-database-inspection` | Provider-neutral, read-only database inspection Admin API |
 | `boson-identity` | End-user accounts, Argon2id passwords, JWT + refresh sessions |
 | `boson-organizations` | Organizations, role memberships, invitations, and authorization |
 | `boson-files` | End-user file metadata, uploads/downloads behind the ObjectStore port |
@@ -143,6 +144,8 @@ Admin (Bearer token required):
   (`jobs:read` / `jobs:write` scopes)
 - `GET /admin/v1/events` and `GET /admin/v1/events/{id}`
   (`events:read` scope)
+- `GET /admin/v1/database`, `/database/tables`, and table schema/row routes
+  (`database:read` scope; read-only, paginated, and redacted)
 
 ## Configuration
 
@@ -160,6 +163,11 @@ export BOSON__DATABASE__URL=postgres://boson:boson@localhost:5432/boson
 export BOSON__ADMIN__BOOTSTRAP_TOKEN=replace-me
 export BOSON__STORAGE__LOCAL_ROOT=data/storage
 ```
+
+Database inspection is disabled by default. Enable
+`database_inspection.enabled` explicitly and use
+`database_inspection.allowed_namespaces` as a production allowlist. Row values
+for configured `redacted_columns` are never selected from the provider.
 
 Object storage is selected by `storage.provider` at the composition root.
 Only `local` is supported today; any other value fails startup.

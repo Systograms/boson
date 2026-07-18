@@ -7,8 +7,10 @@ edition = "2024"
 anyhow = "1.0.103"
 axum = "0.8.9"
 boson-admin = { version = "0.1.0", path = "../../crates/admin" }
+boson-audit = { version = "0.1.0", path = "../../crates/audit" }
 boson-capability = { version = "0.1.0", path = "../../crates/capability" }
 boson-db = { version = "0.1.0", path = "../../crates/db" }
+boson-database-inspection = { version = "0.1.0", path = "../../crates/database-inspection" }
 boson-event-log = { version = "0.1.0", path = "../../crates/event-log" }
 boson-files = { version = "0.1.0", path = "../../crates/files" }
 boson-identity = { version = "0.1.0", path = "../../crates/identity" }

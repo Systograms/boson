@@ -42,6 +42,8 @@ pub enum EventError {
 #[async_trait]
 pub trait EventConsumer: Send + Sync {
     fn name(&self) -> &'static str;
+    /// The topic this consumer subscribes to. Return `"*"` to receive every
+    /// event (used by cross-cutting consumers such as the audit trail).
     fn topic(&self) -> &'static str;
     async fn handle(&self, event: &EventEnvelope) -> Result<(), EventError>;
 }

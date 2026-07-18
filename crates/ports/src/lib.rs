@@ -124,3 +124,127 @@ pub trait Queue: HealthCheck + Send + Sync {
     async fn requeue(&self, id: &str) -> Result<(), PortError>;
     async fn list(&self, limit: usize) -> Result<Vec<JobRecord>, PortError>;
 }
+
+/// Provider-neutral identity for a database table. `namespace` maps to a
+/// PostgreSQL schema, a MySQL database, or the closest equivalent offered by
+/// another adapter.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TableRef {
+    pub namespace: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RowCount {
+    pub value: u64,
+    pub exact: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TableSummary {
+    pub table: TableRef,
+    pub primary_key: Vec<String>,
+    pub row_count: Option<RowCount>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ColumnSchema {
+    pub name: String,
+    /// Display-oriented provider type. Consumers must not parse this to make
+    /// behavioral decisions.
+    pub data_type: String,
+    pub nullable: bool,
+    pub primary_key: bool,
+    pub redacted: bool,
+    pub default: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ForeignKeySchema {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub referenced_table: TableRef,
+    pub referenced_columns: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TableSchema {
+    pub table: TableRef,
+    pub columns: Vec<ColumnSchema>,
+    pub primary_key: Vec<String>,
+    pub foreign_keys: Vec<ForeignKeySchema>,
+    pub row_count: Option<RowCount>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CellKind {
+    Null,
+    Boolean,
+    Number,
+    Text,
+    Json,
+    Binary,
+    DateTime,
+    Other,
+    Redacted,
+}
+
+/// Values are transported as strings to preserve 64-bit integers, decimals,
+/// timestamps, and provider-specific values without JavaScript precision loss.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CellValue {
+    pub kind: CellKind,
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DatabaseRow {
+    pub cells: BTreeMap<String, CellValue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ColumnFilter {
+    pub column: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RowQuery {
+    pub limit: u32,
+    /// Opaque adapter-owned pagination token.
+    pub cursor: Option<String>,
+    /// Phase-one filters are exact matches. Adapters must bind values rather
+    /// than interpolate them into provider queries.
+    pub filters: Vec<ColumnFilter>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RowPage {
+    pub table: TableRef,
+    pub columns: Vec<ColumnSchema>,
+    pub rows: Vec<DatabaseRow>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DatabaseInspectorCapabilities {
+    pub provider: String,
+    pub supports_namespaces: bool,
+    pub supports_exact_count: bool,
+    pub max_page_size: u32,
+}
+
+/// Privileged, read-only metadata and row inspection. Implementations must
+/// validate identifiers against provider metadata, bind filter values, enforce
+/// page limits, and execute row reads in read-only transactions.
+#[async_trait]
+pub trait DatabaseInspector: Send + Sync {
+    fn capabilities(&self) -> DatabaseInspectorCapabilities;
+
+    async fn list_tables(&self) -> Result<Vec<TableSummary>, PortError>;
+
+    async fn describe_table(&self, table: &TableRef) -> Result<TableSchema, PortError>;
+
+    async fn query_rows(&self, table: &TableRef, query: RowQuery) -> Result<RowPage, PortError>;
+}

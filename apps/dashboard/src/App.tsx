@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { CircleUserRound, LogOut, Moon, Sun } from 'lucide-react'
 import { AppSidebar, type PageId } from '@/components/app-sidebar'
 import { ConnectCard } from '@/components/connect-card'
@@ -21,23 +22,36 @@ import {
   type Health,
 } from '@/lib/api'
 import { AdministratorsPage } from '@/pages/administrators'
+import { AuditPage } from '@/pages/audit'
 import { ConfigurationPage } from '@/pages/configuration'
+import { DatabasePage } from '@/pages/database'
 import { HealthPage } from '@/pages/health'
 import { EventsPage } from '@/pages/events'
 import { JobsPage } from '@/pages/jobs'
 import { OrganizationsPage } from '@/pages/organizations'
 import { OverviewPage } from '@/pages/overview'
 import { RequestsPage } from '@/pages/requests'
+import { StoragePage } from '@/pages/storage'
+import { UsersPage } from '@/pages/users'
 
 const PAGE_TITLES: Record<PageId, string> = {
   overview: 'Overview',
   health: 'Health',
   requests: 'Requests',
+  database: 'Database',
   administrators: 'Administrators',
   organizations: 'Organizations',
+  users: 'Users',
+  storage: 'Storage',
   configuration: 'Configuration',
   events: 'Events',
   jobs: 'Jobs',
+  audit: 'Audit',
+}
+
+function pageFromPath(pathname: string): PageId {
+  const segment = pathname.split('/').filter(Boolean)[0] ?? ''
+  return segment in PAGE_TITLES ? (segment as PageId) : 'overview'
 }
 
 function useTheme() {
@@ -52,14 +66,15 @@ function useTheme() {
 }
 
 function Shell({ onDisconnect }: { onDisconnect: () => void }) {
-  const [page, setPage] = useState<PageId>('overview')
+  const location = useLocation()
+  const page = pageFromPath(location.pathname)
   const { dark, toggle } = useTheme()
   const health = useAdminQuery<Health>('health', 15_000)
   const session = useAdminQuery<AdminPrincipal>('admin-session', 60_000)
 
   return (
     <SidebarProvider>
-      <AppSidebar page={page} onNavigate={setPage} />
+      <AppSidebar />
       <SidebarInset>
         <header className="flex h-14 items-center gap-3 border-b px-4">
           <SidebarTrigger />
@@ -89,16 +104,31 @@ function Shell({ onDisconnect }: { onDisconnect: () => void }) {
           </div>
         </header>
         <main className="flex-1 p-4 md:p-6">
-          {page === 'overview' && <OverviewPage />}
-          {page === 'health' && <HealthPage />}
-          {page === 'requests' && <RequestsPage />}
-          {page === 'administrators' && (
-            <AdministratorsPage principal={session.data} />
-          )}
-          {page === 'organizations' && <OrganizationsPage />}
-          {page === 'configuration' && <ConfigurationPage />}
-          {page === 'events' && <EventsPage />}
-          {page === 'jobs' && <JobsPage principal={session.data} />}
+          <Routes>
+            <Route path="/" element={<OverviewPage />} />
+            <Route path="/overview" element={<Navigate to="/" replace />} />
+            <Route path="/health" element={<HealthPage />} />
+            <Route path="/requests" element={<RequestsPage />} />
+            <Route
+              path="/database"
+              element={<DatabasePage principal={session.data} />}
+            />
+            <Route
+              path="/administrators"
+              element={<AdministratorsPage principal={session.data} />}
+            />
+            <Route path="/organizations" element={<OrganizationsPage />} />
+            <Route path="/users" element={<UsersPage />} />
+            <Route path="/storage" element={<StoragePage />} />
+            <Route path="/configuration" element={<ConfigurationPage />} />
+            <Route path="/events" element={<EventsPage />} />
+            <Route
+              path="/jobs"
+              element={<JobsPage principal={session.data} />}
+            />
+            <Route path="/audit" element={<AuditPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </main>
       </SidebarInset>
     </SidebarProvider>

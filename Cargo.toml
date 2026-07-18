@@ -12,6 +12,8 @@ members = [
     "crates/ops",
     "crates/capability",
     "crates/admin",
+    "crates/audit",
+    "crates/database-inspection",
     "crates/identity",
     "crates/organizations",
     "crates/files",

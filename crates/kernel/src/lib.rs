@@ -24,6 +24,7 @@ pub struct PlatformConfig {
     pub auth: AuthConfig,
     pub storage: StorageConfig,
     pub queue: QueueConfig,
+    pub database_inspection: DatabaseInspectionConfig,
 }
 
 impl PlatformConfig {
@@ -128,6 +129,39 @@ impl Default for DatabaseConfig {
             max_connections: 10,
             connect_on_boot: false,
             run_migrations: false,
+        }
+    }
+}
+
+/// Guardrails for the privileged, read-only database explorer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DatabaseInspectionConfig {
+    /// Disabled by default; deployments must opt in explicitly.
+    pub enabled: bool,
+    /// Empty means every non-system namespace. Production deployments should
+    /// set an explicit allowlist.
+    pub allowed_namespaces: Vec<String>,
+    /// Case-insensitive exact column names whose values are never queried.
+    pub redacted_columns: Vec<String>,
+    pub statement_timeout_ms: u64,
+    pub max_page_size: u32,
+}
+
+impl Default for DatabaseInspectionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            allowed_namespaces: Vec::new(),
+            redacted_columns: vec![
+                "password_hash".into(),
+                "token_hash".into(),
+                "refresh_token_hash".into(),
+                "jwt_secret".into(),
+                "bootstrap_token".into(),
+            ],
+            statement_timeout_ms: 2_000,
+            max_page_size: 100,
         }
     }
 }
@@ -310,6 +344,19 @@ mod tests {
         assert_eq!(auth.access_ttl_seconds, 900);
         assert_eq!(auth.refresh_ttl_days, 30);
         assert_eq!(auth.issuer, "boson");
+    }
+
+    #[test]
+    fn database_inspection_fails_closed_by_default() {
+        let inspection = DatabaseInspectionConfig::default();
+        assert!(!inspection.enabled);
+        assert_eq!(inspection.max_page_size, 100);
+        assert!(
+            inspection
+                .redacted_columns
+                .iter()
+                .any(|column| column == "password_hash")
+        );
     }
 
     #[test]

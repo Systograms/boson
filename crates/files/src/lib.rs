@@ -21,6 +21,7 @@ use boson_admin::AdminPrincipal;
 use boson_capability::{Capability, CapabilityDescriptor};
 use boson_db::Database;
 use boson_identity::{AuthenticatedUser, IdentityAuth};
+use boson_kernel::RequestContext;
 use boson_ports::{HealthCheck, ObjectMetadata, ObjectStore, PortError};
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
@@ -174,6 +175,7 @@ struct AdminFileDto {
 async fn upload_file(
     State(state): State<FilesState>,
     Extension(user): Extension<AuthenticatedUser>,
+    Extension(context): Extension<RequestContext>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<(StatusCode, Json<FileDto>), FilesError> {
@@ -246,6 +248,7 @@ async fn upload_file(
             "content_type": content_type,
             "size_bytes": size_bytes
         }),
+        Some(context.request_id),
     )
     .await
     .map_err(unavailable)?;
@@ -322,6 +325,7 @@ async fn download_file(
 async fn delete_file(
     State(state): State<FilesState>,
     Extension(user): Extension<AuthenticatedUser>,
+    Extension(context): Extension<RequestContext>,
     Path(file_id): Path<Uuid>,
 ) -> Result<StatusCode, FilesError> {
     let database = require_database(&state)?;
@@ -343,6 +347,7 @@ async fn delete_file(
         &mut transaction,
         "files.file_deleted.v1",
         json!({ "file_id": file_id, "owner_id": user.user_id }),
+        Some(context.request_id),
     )
     .await
     .map_err(unavailable)?;
@@ -490,15 +495,17 @@ async fn insert_outbox_event(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     topic: &str,
     payload: serde_json::Value,
+    correlation_id: Option<Uuid>,
 ) -> Result<sqlx::postgres::PgQueryResult, sqlx::Error> {
     sqlx::query(
         "INSERT INTO kernel.outbox
-         (id, topic, payload, occurred_at)
-         VALUES ($1, $2, $3, now())",
+         (id, topic, payload, correlation_id, occurred_at)
+         VALUES ($1, $2, $3, $4, now())",
     )
     .bind(Uuid::now_v7())
     .bind(topic)
     .bind(payload)
+    .bind(correlation_id.map(|id| id.to_string()))
     .execute(&mut **transaction)
     .await
 }

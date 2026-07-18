@@ -275,6 +275,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "boson-audit"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "boson-admin",
+ "boson-capability",
+ "boson-db",
+ "boson-events",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "boson-capability"
 version = "0.1.0"
 dependencies = [
@@ -298,11 +316,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "boson-database-inspection"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "boson-admin",
+ "boson-capability",
+ "boson-ports",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "boson-db"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "boson-events",
  "boson-kernel",
+ "boson-ports",
  "chrono",
  "serde",
  "sqlx",
@@ -347,6 +380,7 @@ dependencies = [
  "boson-capability",
  "boson-db",
  "boson-identity",
+ "boson-kernel",
  "boson-ports",
  "bytes",
  "chrono",
@@ -417,7 +451,10 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "sqlx",
  "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -429,6 +466,7 @@ dependencies = [
  "boson-capability",
  "boson-db",
  "boson-identity",
+ "boson-kernel",
  "chrono",
  "hex",
  "serde",
@@ -468,7 +506,9 @@ dependencies = [
  "anyhow",
  "axum",
  "boson-admin",
+ "boson-audit",
  "boson-capability",
+ "boson-database-inspection",
  "boson-db",
  "boson-event-log",
  "boson-files",
@@ -508,6 +548,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "boson-admin",
+ "boson-audit",
  "boson-capability",
  "boson-db",
  "boson-event-log",

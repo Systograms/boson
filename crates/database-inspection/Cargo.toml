@@ -1,5 +1,5 @@
 [package]
-name = "boson-files"
+name = "boson-database-inspection"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,18 +9,10 @@ rust-version.workspace = true
 axum = "0.8.9"
 boson-admin = { version = "0.1.0", path = "../admin" }
 boson-capability = { version = "0.1.0", path = "../capability" }
-boson-db = { version = "0.1.0", path = "../db" }
-boson-identity = { version = "0.1.0", path = "../identity" }
-boson-kernel = { version = "0.1.0", path = "../kernel" }
 boson-ports = { version = "0.1.0", path = "../ports" }
-bytes = "1.12.1"
-chrono = "0.4.45"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
-sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono"] }
 thiserror = "2.0.18"
-tracing = "0.1.44"
-uuid = { version = "1.24.0", features = ["v4", "v7", "serde"] }
 
 [lints]
 workspace = true

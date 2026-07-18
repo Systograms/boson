@@ -11,7 +11,7 @@ use axum::{
 };
 use boson_capability::{Capability, CapabilityDescriptor};
 use boson_db::Database;
-use boson_kernel::AdminConfig;
+use boson_kernel::{AdminConfig, RequestContext};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -24,10 +24,12 @@ use uuid::Uuid;
 const DEFAULT_SCOPES: &[&str] = &[
     "admins:read",
     "admins:write",
+    "audit:read",
     "identity:read",
     "organizations:read",
     "ops:read",
     "config:read",
+    "database:read",
     "events:read",
     "jobs:read",
     "jobs:write",
@@ -278,6 +280,7 @@ async fn list_admins(
 async fn create_admin(
     State(state): State<AdminState>,
     Extension(principal): Extension<AdminPrincipal>,
+    Extension(context): Extension<RequestContext>,
     Json(input): Json<CreateAdminRequest>,
 ) -> Result<(StatusCode, Json<IssuedCredential>), AdminError> {
     require(&principal, "admins:write")?;
@@ -325,7 +328,7 @@ async fn create_admin(
     .execute(&mut *transaction)
     .await
     .map_err(unavailable)?;
-    insert_admin_event(&mut transaction, admin_id, &email)
+    insert_admin_event(&mut transaction, admin_id, &email, Some(context.request_id))
         .await
         .map_err(unavailable)?;
     transaction.commit().await.map_err(unavailable)?;
@@ -507,14 +510,16 @@ async fn insert_admin_event(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     admin_id: Uuid,
     email: &str,
+    correlation_id: Option<Uuid>,
 ) -> Result<sqlx::postgres::PgQueryResult, sqlx::Error> {
     sqlx::query(
         "INSERT INTO kernel.outbox
-         (id, topic, payload, occurred_at)
-         VALUES ($1, 'admin.user_created.v1', $2, now())",
+         (id, topic, payload, correlation_id, occurred_at)
+         VALUES ($1, 'admin.user_created.v1', $2, $3, now())",
     )
     .bind(Uuid::now_v7())
     .bind(json!({ "admin_id": admin_id, "email": email }))
+    .bind(correlation_id.map(|id| id.to_string()))
     .execute(&mut **transaction)
     .await
 }

@@ -14,6 +14,7 @@ use boson_admin::AdminPrincipal;
 use boson_capability::{Capability, CapabilityDescriptor};
 use boson_db::Database;
 use boson_identity::{AuthenticatedUser, IdentityAuth, IdentityDirectory};
+use boson_kernel::RequestContext;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -348,6 +349,7 @@ struct AcceptInvitationRequest {
 async fn create_organization(
     State(state): State<OrganizationsState>,
     Extension(user): Extension<AuthenticatedUser>,
+    Extension(context): Extension<RequestContext>,
     Json(input): Json<CreateOrganizationRequest>,
 ) -> Result<(StatusCode, Json<OrganizationDto>), OrganizationsError> {
     let name = validate_name(&input.name)?;
@@ -385,6 +387,7 @@ async fn create_organization(
             "name": name,
             "slug": slug
         }),
+        Some(context.request_id),
     )
     .await
     .map_err(unavailable)?;
@@ -396,6 +399,7 @@ async fn create_organization(
             "user_id": user.user_id,
             "role": "owner"
         }),
+        Some(context.request_id),
     )
     .await
     .map_err(unavailable)?;
@@ -574,6 +578,7 @@ async fn list_members(
 async fn change_member_role(
     State(state): State<OrganizationsState>,
     Extension(user): Extension<AuthenticatedUser>,
+    Extension(context): Extension<RequestContext>,
     Path((organization_id, target_user_id)): Path<(Uuid, Uuid)>,
     Json(input): Json<ChangeRoleRequest>,
 ) -> Result<Json<MemberDto>, OrganizationsError> {
@@ -619,6 +624,7 @@ async fn change_member_role(
                 "new_role": new_role,
                 "changed_by": user.user_id
             }),
+            Some(context.request_id),
         )
         .await
         .map_err(unavailable)?;
@@ -630,6 +636,7 @@ async fn change_member_role(
 async fn remove_member(
     State(state): State<OrganizationsState>,
     Extension(user): Extension<AuthenticatedUser>,
+    Extension(context): Extension<RequestContext>,
     Path((organization_id, target_user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, OrganizationsError> {
     let database = require_database(&state)?;
@@ -666,6 +673,7 @@ async fn remove_member(
             "role": target_role,
             "removed_by": user.user_id
         }),
+        Some(context.request_id),
     )
     .await
     .map_err(unavailable)?;
@@ -676,6 +684,7 @@ async fn remove_member(
 async fn create_invitation(
     State(state): State<OrganizationsState>,
     Extension(user): Extension<AuthenticatedUser>,
+    Extension(context): Extension<RequestContext>,
     Path(organization_id): Path<Uuid>,
     Json(input): Json<CreateInvitationRequest>,
 ) -> Result<(StatusCode, Json<IssuedInvitation>), OrganizationsError> {
@@ -726,6 +735,7 @@ async fn create_invitation(
             "invited_by": user.user_id,
             "expires_at": expires_at
         }),
+        Some(context.request_id),
     )
     .await
     .map_err(unavailable)?;
@@ -752,6 +762,7 @@ async fn create_invitation(
 async fn accept_invitation(
     State(state): State<OrganizationsState>,
     Extension(user): Extension<AuthenticatedUser>,
+    Extension(context): Extension<RequestContext>,
     Json(input): Json<AcceptInvitationRequest>,
 ) -> Result<(StatusCode, Json<MemberDto>), OrganizationsError> {
     if input.token.is_empty() || input.token.len() > 256 {
@@ -827,30 +838,52 @@ async fn accept_invitation(
     .execute(&mut *transaction)
     .await
     .map_err(unavailable)?;
-    insert_outbox_event(
+    publish_invitation_accepted_events(
         &mut transaction,
+        invitation_id,
+        organization_id,
+        user.user_id,
+        role,
+        context.request_id,
+    )
+    .await?;
+    transaction.commit().await.map_err(unavailable)?;
+    Ok((StatusCode::CREATED, Json(member_from_row(&member_row)?)))
+}
+
+async fn publish_invitation_accepted_events(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    invitation_id: Uuid,
+    organization_id: Uuid,
+    user_id: Uuid,
+    role: Role,
+    request_id: Uuid,
+) -> Result<(), OrganizationsError> {
+    insert_outbox_event(
+        transaction,
         "organizations.member_added.v1",
         json!({
             "organization_id": organization_id,
-            "user_id": user.user_id,
+            "user_id": user_id,
             "role": role
         }),
+        Some(request_id),
     )
     .await
     .map_err(unavailable)?;
     insert_outbox_event(
-        &mut transaction,
+        transaction,
         "organizations.invitation_accepted.v1",
         json!({
             "invitation_id": invitation_id,
             "organization_id": organization_id,
-            "user_id": user.user_id
+            "user_id": user_id
         }),
+        Some(request_id),
     )
     .await
     .map_err(unavailable)?;
-    transaction.commit().await.map_err(unavailable)?;
-    Ok((StatusCode::CREATED, Json(member_from_row(&member_row)?)))
+    Ok(())
 }
 
 async fn admin_list_organizations(
@@ -1193,15 +1226,17 @@ async fn insert_outbox_event(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     topic: &str,
     payload: serde_json::Value,
+    correlation_id: Option<Uuid>,
 ) -> Result<sqlx::postgres::PgQueryResult, sqlx::Error> {
     sqlx::query(
         "INSERT INTO kernel.outbox
-         (id, topic, payload, occurred_at)
-         VALUES ($1, $2, $3, now())",
+         (id, topic, payload, correlation_id, occurred_at)
+         VALUES ($1, $2, $3, $4, now())",
     )
     .bind(Uuid::now_v7())
     .bind(topic)
     .bind(payload)
+    .bind(correlation_id.map(|id| id.to_string()))
     .execute(&mut **transaction)
     .await
 }

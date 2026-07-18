@@ -10,8 +10,10 @@ use axum::{
     routing::get,
 };
 use boson_admin::{AdminAuth, AdminCapability};
+use boson_audit::AuditCapability;
 use boson_capability::CapabilityRegistry;
-use boson_db::Database;
+use boson_database_inspection::DatabaseInspectionCapability;
+use boson_db::{Database, PostgresInspector};
 use boson_event_log::EventsCapability;
 use boson_files::FilesCapability;
 use boson_identity::IdentityCapability;
@@ -19,10 +21,9 @@ use boson_jobs::JobsCapability;
 use boson_kernel::{PlatformConfig, QueueConfig, RequestContext, StorageConfig, init_telemetry};
 use boson_ops::{OpsCapability, OpsState, RequestTrace};
 use boson_organizations::OrganizationsCapability;
-use boson_ports::{ObjectStore, Queue};
+use boson_ports::{DatabaseInspector, ObjectStore, Queue};
 use boson_queue_postgres::PostgresQueue;
 use boson_storage_local::LocalObjectStore;
-use chrono::Utc;
 use serde_json::{Value, json};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
@@ -54,7 +55,7 @@ async fn main() -> Result<()> {
         None
     };
 
-    let ops = OpsState::default();
+    let ops = OpsState::new(database.clone());
     let admin_auth = AdminAuth::new(database.clone(), &config.admin);
     let mut capabilities = CapabilityRegistry::default();
     capabilities.register(Arc::new(OpsCapability::new(
@@ -63,6 +64,20 @@ async fn main() -> Result<()> {
         ops.clone(),
     )))?;
     capabilities.register(Arc::new(AdminCapability::new(database.clone())))?;
+    capabilities.register(Arc::new(AuditCapability::new(database.clone())))?;
+    let database_inspector = if config.database_inspection.enabled {
+        database.as_ref().map(|database| {
+            Arc::new(PostgresInspector::new(
+                database.pool().clone(),
+                &config.database_inspection,
+            )) as Arc<dyn DatabaseInspector>
+        })
+    } else {
+        None
+    };
+    capabilities.register(Arc::new(DatabaseInspectionCapability::new(
+        database_inspector,
+    )))?;
     let identity = IdentityCapability::new(database.clone(), &config.auth);
     let identity_auth = identity.auth();
     let identity_directory = identity.directory();
@@ -211,6 +226,7 @@ async fn trace_request(
 ) -> Response {
     let context = RequestContext::new();
     let request_id = context.request_id.to_string();
+    let started_at = context.started_at;
     let method = request.method().to_string();
     let path = request.uri().path().to_owned();
     request.extensions_mut().insert(context);
@@ -227,7 +243,7 @@ async fn trace_request(
         .ops
         .record(RequestTrace {
             request_id,
-            started_at: Utc::now(),
+            started_at,
             method,
             path,
             status_code,

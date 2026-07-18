@@ -12,6 +12,18 @@ database:
   connect_on_boot: false
   run_migrations: false
 
+database_inspection:
+  enabled: true
+  allowed_namespaces: []
+  redacted_columns:
+    - password_hash
+    - token_hash
+    - refresh_token_hash
+    - jwt_secret
+    - bootstrap_token
+  statement_timeout_ms: 2000
+  max_page_size: 100
+
 telemetry:
   log_level: boson_server=debug,boson_worker=debug,tower_http=info
   json: false
