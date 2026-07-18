@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { LogOut, Moon, Sun } from 'lucide-react'
+import { CircleUserRound, LogOut, Moon, Sun } from 'lucide-react'
 import { AppSidebar, type PageId } from '@/components/app-sidebar'
 import { ConnectCard } from '@/components/connect-card'
 import { StatusBadge } from '@/components/status-badge'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -12,9 +13,19 @@ import {
 } from '@/components/ui/sidebar'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAdminQuery } from '@/hooks/use-admin-query'
-import { clearToken, getToken, setToken, type Health } from '@/lib/api'
+import {
+  clearToken,
+  getToken,
+  setToken,
+  type AdminPrincipal,
+  type Health,
+} from '@/lib/api'
+import { AdministratorsPage } from '@/pages/administrators'
 import { ConfigurationPage } from '@/pages/configuration'
 import { HealthPage } from '@/pages/health'
+import { EventsPage } from '@/pages/events'
+import { JobsPage } from '@/pages/jobs'
+import { OrganizationsPage } from '@/pages/organizations'
 import { OverviewPage } from '@/pages/overview'
 import { RequestsPage } from '@/pages/requests'
 
@@ -22,7 +33,11 @@ const PAGE_TITLES: Record<PageId, string> = {
   overview: 'Overview',
   health: 'Health',
   requests: 'Requests',
+  administrators: 'Administrators',
+  organizations: 'Organizations',
   configuration: 'Configuration',
+  events: 'Events',
+  jobs: 'Jobs',
 }
 
 function useTheme() {
@@ -40,6 +55,7 @@ function Shell({ onDisconnect }: { onDisconnect: () => void }) {
   const [page, setPage] = useState<PageId>('overview')
   const { dark, toggle } = useTheme()
   const health = useAdminQuery<Health>('health', 15_000)
+  const session = useAdminQuery<AdminPrincipal>('admin-session', 60_000)
 
   return (
     <SidebarProvider>
@@ -51,6 +67,19 @@ function Shell({ onDisconnect }: { onDisconnect: () => void }) {
           <h1 className="text-sm font-semibold">{PAGE_TITLES[page]}</h1>
           <div className="ml-auto flex items-center gap-2">
             {health.data && <StatusBadge status={health.data.status} />}
+            {session.data && (
+              <div className="hidden items-center gap-2 sm:flex">
+                <CircleUserRound className="size-4 text-muted-foreground" />
+                <span className="max-w-44 truncate text-xs font-medium">
+                  {session.data.email ?? 'Bootstrap administrator'}
+                </span>
+                {session.data.bootstrap && (
+                  <Badge variant="outline" className="text-[10px]">
+                    bootstrap
+                  </Badge>
+                )}
+              </div>
+            )}
             <Button variant="ghost" size="icon" onClick={toggle}>
               {dark ? <Sun data-slot="icon" /> : <Moon data-slot="icon" />}
             </Button>
@@ -63,7 +92,13 @@ function Shell({ onDisconnect }: { onDisconnect: () => void }) {
           {page === 'overview' && <OverviewPage />}
           {page === 'health' && <HealthPage />}
           {page === 'requests' && <RequestsPage />}
+          {page === 'administrators' && (
+            <AdministratorsPage principal={session.data} />
+          )}
+          {page === 'organizations' && <OrganizationsPage />}
           {page === 'configuration' && <ConfigurationPage />}
+          {page === 'events' && <EventsPage />}
+          {page === 'jobs' && <JobsPage principal={session.data} />}
         </main>
       </SidebarInset>
     </SidebarProvider>

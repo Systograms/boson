@@ -5,8 +5,19 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.103"
+boson-admin = { version = "0.1.0", path = "../../crates/admin" }
+boson-capability = { version = "0.1.0", path = "../../crates/capability" }
 boson-db = { version = "0.1.0", path = "../../crates/db" }
+boson-event-log = { version = "0.1.0", path = "../../crates/event-log" }
+boson-events = { version = "0.1.0", path = "../../crates/events" }
+boson-files = { version = "0.1.0", path = "../../crates/files" }
+boson-identity = { version = "0.1.0", path = "../../crates/identity" }
 boson-kernel = { version = "0.1.0", path = "../../crates/kernel" }
+boson-jobs = { version = "0.1.0", path = "../../crates/jobs" }
 boson-ops = { version = "0.1.0", path = "../../crates/ops" }
+boson-organizations = { version = "0.1.0", path = "../../crates/organizations" }
+boson-ports = { version = "0.1.0", path = "../../crates/ports" }
+boson-queue-postgres = { version = "0.1.0", path = "../../adapters/queue-postgres" }
+boson-storage-local = { version = "0.1.0", path = "../../adapters/storage-local" }
 tokio = { version = "1.53.0", features = ["full"] }
 tracing = "0.1.44"

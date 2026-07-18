@@ -6,6 +6,7 @@ type QueryState<T> = {
   error: string | null
   unauthorized: boolean
   loading: boolean
+  updatedAt: number | null
 }
 
 export function useAdminQuery<T>(endpoint: string, refreshMs?: number) {
@@ -14,12 +15,19 @@ export function useAdminQuery<T>(endpoint: string, refreshMs?: number) {
     error: null,
     unauthorized: false,
     loading: true,
+    updatedAt: null,
   })
 
   const load = useCallback(async () => {
     try {
       const data = await adminGet<T>(endpoint)
-      setState({ data, error: null, unauthorized: false, loading: false })
+      setState({
+        data,
+        error: null,
+        unauthorized: false,
+        loading: false,
+        updatedAt: Date.now(),
+      })
     } catch (reason) {
       const unauthorized =
         reason instanceof AdminApiError && reason.status === 401
@@ -28,6 +36,7 @@ export function useAdminQuery<T>(endpoint: string, refreshMs?: number) {
         error: reason instanceof Error ? reason.message : 'Request failed',
         unauthorized,
         loading: false,
+        updatedAt: previous.updatedAt,
       }))
     }
   }, [endpoint])

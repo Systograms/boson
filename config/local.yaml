@@ -19,3 +19,22 @@ telemetry:
 # Development only. Override with BOSON__ADMIN__BOOTSTRAP_TOKEN.
 admin:
   bootstrap_token: local-development-token
+
+# Development only. Override with BOSON__AUTH__JWT_SECRET.
+auth:
+  issuer: boson
+  jwt_secret: local-development-jwt-secret
+  access_ttl_seconds: 900
+  refresh_ttl_days: 30
+
+storage:
+  provider: local
+  local_root: data/storage
+  public_base_url: ""
+
+queue:
+  provider: postgres
+  poll_interval_ms: 1000
+  batch_size: 25
+  visibility_timeout_seconds: 60
+  max_attempts: 5

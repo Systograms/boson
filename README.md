@@ -4,9 +4,9 @@ Boson is a modular backend platform written in Rust. It combines a production
 server, background worker, operational Admin API, dashboard, CLI, and versioned
 documentation without coupling application logic to cloud providers.
 
-This repository is the first runnable platform foundation. It deliberately does
-not pretend unfinished capabilities such as identity, organizations, or billing
-are production-ready.
+This repository is the first runnable platform foundation. Identity,
+organizations, file storage, jobs, and event inspection are implemented as
+capabilities; billing remains out of scope.
 
 ## Applications
 
@@ -28,6 +28,14 @@ are production-ready.
 | `boson-events` | Versioned event envelope and consumer contract |
 | `boson-db` | PostgreSQL pool, migrations, outbox, worker heartbeat |
 | `boson-ops` | Request traces, overview metrics, worker state |
+| `boson-admin` | Platform administrator identities and scoped API keys |
+| `boson-identity` | End-user accounts, Argon2id passwords, JWT + refresh sessions |
+| `boson-organizations` | Organizations, role memberships, invitations, and authorization |
+| `boson-files` | End-user file metadata, uploads/downloads behind the ObjectStore port |
+| `boson-storage-local` | Local-filesystem ObjectStore adapter (`adapters/storage-local`) |
+| `boson-queue-postgres` | Durable at-least-once PostgreSQL queue adapter |
+| `boson-jobs` | Scoped Admin job inspection and manual retry APIs |
+| `boson-event-log` | Scoped Admin outbox and delivery inspection APIs |
 
 Dependency direction:
 
@@ -79,7 +87,8 @@ docker compose up --build
 - Development Admin token: `local-development-token`
 
 The compose stack enables PostgreSQL, applies migrations, starts the worker,
-and serves the dashboard.
+and serves the dashboard. Uploaded files persist in the `boson-storage` named
+volume, mounted at `/var/lib/boson/storage` in the server and worker.
 
 ## APIs currently available
 
@@ -89,12 +98,51 @@ Public:
 - `GET /healthz`
 - `GET /readyz`
 
+End-user identity (requires PostgreSQL and `auth.jwt_secret`):
+
+- `POST /v1/auth/register`, `POST /v1/auth/login` — return the user, an access
+  token, and a rotating refresh token
+- `POST /v1/auth/refresh` — rotates the refresh token transactionally
+- `POST /v1/auth/logout` — revokes the refresh session
+- `GET /v1/auth/me` — requires a Bearer access token
+
+Files (requires a Bearer access token, PostgreSQL, and configured storage):
+
+- `POST /v1/files` — direct upload; raw bytes with required `Content-Type` and
+  `X-Boson-Filename` headers
+- `GET /v1/files` — lists the caller's files (metadata only)
+- `GET /v1/files/{id}/content` — downloads the file bytes
+- `DELETE /v1/files/{id}` — soft-deletes metadata and removes the bytes
+
+Organizations (requires a Bearer access token and PostgreSQL):
+
+- `POST /v1/organizations`, `GET /v1/organizations`
+- `GET /v1/organizations/{id}`, `PATCH /v1/organizations/{id}`,
+  `DELETE /v1/organizations/{id}`
+- `GET /v1/organizations/{id}/members`
+- `PATCH /v1/organizations/{id}/members/{user_id}`,
+  `DELETE /v1/organizations/{id}/members/{user_id}`
+- `POST /v1/organizations/{id}/invitations` — returns the opaque invitation
+  token once; only its SHA-256 hash is stored
+- `POST /v1/organization-invitations/accept` — validates the authenticated
+  user's email and atomically consumes the invitation
+
 Admin (Bearer token required):
 
 - `GET /admin/v1/health`
 - `GET /admin/v1/overview`
 - `GET /admin/v1/requests`
 - `GET /admin/v1/config` — effective configuration with secrets redacted
+- `GET /admin/v1/users`, `GET /admin/v1/sessions` — end-user directory
+  (`identity:read` scope)
+- `GET /admin/v1/organizations`, `GET /admin/v1/organization-memberships`,
+  `GET /admin/v1/organization-invitations` (`organizations:read` scope)
+- `GET /admin/v1/files` — file metadata across all users, no storage paths
+  (`storage:read` scope)
+- `GET /admin/v1/jobs` and `POST /admin/v1/jobs/{id}/retry`
+  (`jobs:read` / `jobs:write` scopes)
+- `GET /admin/v1/events` and `GET /admin/v1/events/{id}`
+  (`events:read` scope)
 
 ## Configuration
 
@@ -110,7 +158,19 @@ Example:
 export BOSON__DATABASE__CONNECT_ON_BOOT=true
 export BOSON__DATABASE__URL=postgres://boson:boson@localhost:5432/boson
 export BOSON__ADMIN__BOOTSTRAP_TOKEN=replace-me
+export BOSON__STORAGE__LOCAL_ROOT=data/storage
 ```
+
+Object storage is selected by `storage.provider` at the composition root.
+Only `local` is supported today; any other value fails startup.
+
+The background queue is configured under `queue` and currently requires the
+`postgres` provider. Workers lease due jobs with `SKIP LOCKED`; expired leases
+are visible again, handler failures back off until `max_attempts`, and the final
+failure is retained as `dead`. Outbox events use the same lease discipline.
+Per-consumer deliveries are idempotently recorded, and an event is dispatched
+only after every matching registered consumer succeeds. Topics with no
+registered consumer are still marked dispatched and remain inspectable.
 
 The Admin API only exposes a redacted snapshot. Never commit production secrets.
 

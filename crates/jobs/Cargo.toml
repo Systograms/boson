@@ -1,0 +1,16 @@
+[package]
+name = "boson-jobs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+axum = "0.8.9"
+boson-admin = { version = "0.1.0", path = "../admin" }
+boson-capability = { version = "0.1.0", path = "../capability" }
+boson-ports = { version = "0.1.0", path = "../ports" }
+serde_json = "1.0.150"
+
+[lints]
+workspace = true

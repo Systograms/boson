@@ -22,6 +22,24 @@ enum Command {
     Config,
     /// Print the server's operational overview.
     Overview,
+    /// Manage persistent platform administrator identities.
+    Admin {
+        #[command(subcommand)]
+        command: AdminCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum AdminCommand {
+    /// Create an administrator and issue its first API key.
+    Create {
+        #[arg(long)]
+        email: String,
+        #[arg(long)]
+        display_name: String,
+        #[arg(long, default_value = "default")]
+        key_name: String,
+    },
 }
 
 #[tokio::main]
@@ -32,7 +50,53 @@ async fn main() -> Result<()> {
         Command::Doctor => doctor(&client, &cli.server).await,
         Command::Config => admin_get(&client, &cli.server, cli.admin_token, "config").await,
         Command::Overview => admin_get(&client, &cli.server, cli.admin_token, "overview").await,
+        Command::Admin {
+            command:
+                AdminCommand::Create {
+                    email,
+                    display_name,
+                    key_name,
+                },
+        } => {
+            admin_post(
+                &client,
+                &cli.server,
+                cli.admin_token,
+                "admins",
+                serde_json::json!({
+                    "email": email,
+                    "display_name": display_name,
+                    "key_name": key_name
+                }),
+            )
+            .await
+        }
     }
+}
+
+async fn admin_post(
+    client: &Client,
+    server: &str,
+    token: Option<String>,
+    endpoint: &str,
+    body: Value,
+) -> Result<()> {
+    let token =
+        token.context("admin token required; pass --admin-token or set BOSON_ADMIN_TOKEN")?;
+    let url = format!("{}/admin/v1/{endpoint}", server.trim_end_matches('/'));
+    let response = client
+        .post(url)
+        .bearer_auth(token)
+        .json(&body)
+        .send()
+        .await?;
+    let status = response.status();
+    let body: Value = response.json().await?;
+    println!("{}", serde_json::to_string_pretty(&body)?);
+    if !status.is_success() {
+        bail!("Admin API returned {status}");
+    }
+    Ok(())
 }
 
 async fn doctor(client: &Client, server: &str) -> Result<()> {

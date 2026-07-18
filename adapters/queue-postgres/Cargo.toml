@@ -1,0 +1,15 @@
+[package]
+name = "boson-queue-postgres"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1.89"
+boson-ports = { version = "0.1.0", path = "../../crates/ports" }
+chrono = "0.4.45"
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "json"] }
+
+[lints]
+workspace = true

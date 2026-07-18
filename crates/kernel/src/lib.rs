@@ -21,6 +21,9 @@ pub struct PlatformConfig {
     pub database: DatabaseConfig,
     pub telemetry: TelemetryConfig,
     pub admin: AdminConfig,
+    pub auth: AuthConfig,
+    pub storage: StorageConfig,
+    pub queue: QueueConfig,
 }
 
 impl PlatformConfig {
@@ -58,6 +61,18 @@ impl PlatformConfig {
         if let Some(admin) = value.get_mut("admin").and_then(|v| v.as_object_mut()) {
             admin.insert(
                 "bootstrap_token".into(),
+                serde_json::Value::String("[REDACTED]".into()),
+            );
+        }
+        if let Some(auth) = value.get_mut("auth").and_then(|v| v.as_object_mut()) {
+            auth.insert(
+                "jwt_secret".into(),
+                serde_json::Value::String("[REDACTED]".into()),
+            );
+        }
+        if let Some(storage) = value.get_mut("storage").and_then(|v| v.as_object_mut()) {
+            storage.insert(
+                "local_root".into(),
                 serde_json::Value::String("[REDACTED]".into()),
             );
         }
@@ -140,6 +155,79 @@ pub struct AdminConfig {
     pub bootstrap_token: String,
 }
 
+/// End-user authentication settings consumed by the identity capability.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AuthConfig {
+    /// Issuer claim stamped into and required from access tokens.
+    pub issuer: String,
+    /// HS256 signing secret. Production should use a secret source.
+    pub jwt_secret: String,
+    /// Access token lifetime in seconds.
+    pub access_ttl_seconds: u64,
+    /// Refresh session lifetime in days.
+    pub refresh_ttl_days: u64,
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self {
+            issuer: "boson".into(),
+            jwt_secret: String::new(),
+            access_ttl_seconds: 900,
+            refresh_ttl_days: 30,
+        }
+    }
+}
+
+/// Object storage settings consumed by the composition roots.
+///
+/// Capabilities never read this directly; the Server and Worker select a
+/// concrete `ObjectStore` adapter from it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct StorageConfig {
+    /// Object store provider. Only `local` is supported today.
+    pub provider: String,
+    /// Root directory used by the local provider. Redacted in Admin output.
+    pub local_root: String,
+    /// Reserved for providers that mint browser-facing URLs.
+    pub public_base_url: String,
+}
+
+/// Durable background queue settings selected by each composition root.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct QueueConfig {
+    pub provider: String,
+    pub poll_interval_ms: u64,
+    pub batch_size: usize,
+    pub visibility_timeout_seconds: u64,
+    pub max_attempts: u32,
+}
+
+impl Default for QueueConfig {
+    fn default() -> Self {
+        Self {
+            provider: "postgres".into(),
+            poll_interval_ms: 1_000,
+            batch_size: 25,
+            visibility_timeout_seconds: 60,
+            max_attempts: 5,
+        }
+    }
+}
+
+impl Default for StorageConfig {
+    fn default() -> Self {
+        Self {
+            provider: "local".into(),
+            local_root: "data/storage".into(),
+            public_base_url: String::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestContext {
     pub request_id: Uuid,
@@ -202,7 +290,26 @@ mod tests {
     #[test]
     fn secrets_are_redacted() {
         let config = PlatformConfig::default();
-        assert_eq!(config.redacted()["database"]["url"], "[REDACTED]");
+        let redacted = config.redacted();
+        assert_eq!(redacted["database"]["url"], "[REDACTED]");
+        assert_eq!(redacted["admin"]["bootstrap_token"], "[REDACTED]");
+        assert_eq!(redacted["auth"]["jwt_secret"], "[REDACTED]");
+        assert_eq!(redacted["storage"]["local_root"], "[REDACTED]");
+    }
+
+    #[test]
+    fn storage_defaults_to_local_provider() {
+        let storage = StorageConfig::default();
+        assert_eq!(storage.provider, "local");
+        assert!(!storage.local_root.is_empty());
+    }
+
+    #[test]
+    fn auth_defaults_are_sensible() {
+        let auth = AuthConfig::default();
+        assert_eq!(auth.access_ttl_seconds, 900);
+        assert_eq!(auth.refresh_ttl_days, 30);
+        assert_eq!(auth.issuer, "boson");
     }
 
     #[test]

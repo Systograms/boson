@@ -8,8 +8,13 @@ use std::{
     },
 };
 
+use axum::{Json, Router, extract::State, routing::get};
+use boson_capability::{Capability, CapabilityDescriptor};
+use boson_db::Database;
+use boson_kernel::PlatformConfig;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
+use serde_json::{Value, json};
 use tokio::sync::RwLock;
 
 const TRACE_CAPACITY: usize = 500;
@@ -94,4 +99,150 @@ impl OpsState {
             retained_traces: self.traces.read().await.len(),
         }
     }
+}
+
+#[derive(Clone)]
+struct OpsCapabilityState {
+    config: Arc<PlatformConfig>,
+    database: Option<Database>,
+    ops: OpsState,
+}
+
+#[derive(Clone)]
+pub struct OpsCapability {
+    state: OpsCapabilityState,
+}
+
+impl OpsCapability {
+    #[must_use]
+    pub fn new(config: Arc<PlatformConfig>, database: Option<Database>, ops: OpsState) -> Self {
+        Self {
+            state: OpsCapabilityState {
+                config,
+                database,
+                ops,
+            },
+        }
+    }
+}
+
+impl Capability for OpsCapability {
+    fn descriptor(&self) -> CapabilityDescriptor {
+        CapabilityDescriptor {
+            name: "ops",
+            version: env!("CARGO_PKG_VERSION"),
+            dependencies: &[],
+        }
+    }
+
+    fn admin_router(&self) -> Router {
+        Router::new()
+            .route("/health", get(admin_health))
+            .route("/overview", get(admin_overview))
+            .route("/requests", get(admin_requests))
+            .route("/config", get(admin_config))
+            .with_state(self.state.clone())
+    }
+}
+
+#[derive(Serialize)]
+struct HealthResponse {
+    status: &'static str,
+    version: &'static str,
+    checks: Vec<DependencyHealth>,
+}
+
+#[derive(Serialize)]
+struct DependencyHealth {
+    name: &'static str,
+    status: &'static str,
+    message: Option<String>,
+}
+
+async fn admin_health(State(state): State<OpsCapabilityState>) -> Json<HealthResponse> {
+    let database = match &state.database {
+        Some(database) => match database.ping().await {
+            Ok(()) => DependencyHealth {
+                name: "postgres",
+                status: "ok",
+                message: None,
+            },
+            Err(error) => DependencyHealth {
+                name: "postgres",
+                status: "down",
+                message: Some(error.to_string()),
+            },
+        },
+        None => DependencyHealth {
+            name: "postgres",
+            status: "disabled",
+            message: Some("set database.connect_on_boot=true to enable".into()),
+        },
+    };
+    let worker = match &state.database {
+        Some(database) => match database.worker_heartbeats().await {
+            Ok(workers)
+                if workers
+                    .iter()
+                    .any(|worker| (Utc::now() - worker.last_heartbeat).num_seconds() < 30) =>
+            {
+                DependencyHealth {
+                    name: "worker",
+                    status: "ok",
+                    message: None,
+                }
+            }
+            Ok(_) => DependencyHealth {
+                name: "worker",
+                status: "down",
+                message: Some("no recent worker heartbeat".into()),
+            },
+            Err(error) => DependencyHealth {
+                name: "worker",
+                status: "down",
+                message: Some(error.to_string()),
+            },
+        },
+        None => DependencyHealth {
+            name: "worker",
+            status: "disabled",
+            message: Some("worker health requires PostgreSQL".into()),
+        },
+    };
+    let status = if database.status == "down" || worker.status == "down" {
+        "degraded"
+    } else {
+        "ok"
+    };
+    Json(HealthResponse {
+        status,
+        version: env!("CARGO_PKG_VERSION"),
+        checks: vec![database, worker],
+    })
+}
+
+async fn admin_overview(State(state): State<OpsCapabilityState>) -> Json<Value> {
+    let workers = match &state.database {
+        Some(database) => database
+            .worker_heartbeats()
+            .await
+            .map_or_else(|_| json!([]), |workers| json!(workers)),
+        None => json!(state.ops.workers().await),
+    };
+    Json(json!({
+        "metrics": state.ops.overview().await,
+        "workers": workers
+    }))
+}
+
+async fn admin_requests(State(state): State<OpsCapabilityState>) -> Json<Value> {
+    Json(json!({ "data": state.ops.traces().await }))
+}
+
+async fn admin_config(State(state): State<OpsCapabilityState>) -> Json<Value> {
+    Json(json!({
+        "snapshot_id": state.config.snapshot_id(),
+        "effective": state.config.redacted(),
+        "read_only": true
+    }))
 }

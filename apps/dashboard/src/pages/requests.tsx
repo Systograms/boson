@@ -1,4 +1,5 @@
-import { RefreshCw } from 'lucide-react'
+import { Fragment, useMemo, useState } from 'react'
+import { ChevronDown, ChevronRight, RefreshCw, Search } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -8,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import {
   Table,
   TableBody,
@@ -21,11 +23,42 @@ import { useAdminQuery } from '@/hooks/use-admin-query'
 import type { RequestTrace } from '@/lib/api'
 
 export function RequestsPage() {
-  const { data, refresh } = useAdminQuery<{ data: RequestTrace[] }>(
+  const { data, loading, refresh, updatedAt } = useAdminQuery<{
+    data: RequestTrace[]
+  }>(
     'requests',
     10_000,
   )
-  const traces = data?.data ?? []
+  const traces = useMemo(() => data?.data ?? [], [data])
+  const [query, setQuery] = useState('')
+  const [method, setMethod] = useState('all')
+  const [status, setStatus] = useState('all')
+  const [expanded, setExpanded] = useState<string | null>(null)
+
+  const methods = useMemo(
+    () => [...new Set(traces.map((trace) => trace.method))].sort(),
+    [traces],
+  )
+  const filtered = useMemo(() => {
+    const normalized = query.trim().toLowerCase()
+    return traces.filter((trace) => {
+      const matchesQuery =
+        !normalized ||
+        trace.path.toLowerCase().includes(normalized) ||
+        trace.request_id.toLowerCase().includes(normalized)
+      const matchesMethod = method === 'all' || trace.method === method
+      const statusClass = Math.floor(trace.status_code / 100)
+      const matchesStatus =
+        status === 'all' || statusClass.toString() === status
+      return matchesQuery && matchesMethod && matchesStatus
+    })
+  }, [method, query, status, traces])
+
+  function durationClass(duration: number): string {
+    if (duration >= 1000) return 'text-destructive'
+    if (duration >= 300) return 'text-amber-600 dark:text-amber-400'
+    return 'text-emerald-600 dark:text-emerald-400'
+  }
 
   return (
     <Card>
@@ -36,13 +69,78 @@ export function RequestsPage() {
             The most recent requests served by the platform, newest first.
           </CardDescription>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void refresh()}>
-          <RefreshCw data-slot="icon" /> Refresh
-        </Button>
+        <div className="flex items-center gap-3">
+          <span className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
+            <span
+              className={`size-2 rounded-full bg-emerald-500 ${loading ? 'animate-pulse' : ''}`}
+            />
+            Live · 10s
+            {updatedAt && (
+              <span className="tabular-nums">
+                · {new Date(updatedAt).toLocaleTimeString()}
+              </span>
+            )}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={loading}
+            onClick={() => void refresh()}
+          >
+            <RefreshCw
+              data-slot="icon"
+              className={loading ? 'animate-spin' : undefined}
+            />{' '}
+            Refresh
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row">
+          <div className="relative min-w-0 flex-1">
+            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Filter by path or request ID…"
+              className="pl-9"
+            />
+          </div>
+          <select
+            value={method}
+            onChange={(event) => setMethod(event.target.value)}
+            aria-label="Filter by method"
+            className="h-9 rounded-3xl border border-transparent bg-input/50 px-3 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/30"
+          >
+            <option value="all">All methods</option>
+            {methods.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+          <select
+            value={status}
+            onChange={(event) => setStatus(event.target.value)}
+            aria-label="Filter by status"
+            className="h-9 rounded-3xl border border-transparent bg-input/50 px-3 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/30"
+          >
+            <option value="all">All statuses</option>
+            <option value="2">2xx success</option>
+            <option value="3">3xx redirect</option>
+            <option value="4">4xx client error</option>
+            <option value="5">5xx server error</option>
+          </select>
+          <Badge variant="secondary" className="justify-center tabular-nums">
+            {filtered.length} / {traces.length}
+          </Badge>
+        </div>
         {traces.length === 0 ? (
           <p className="text-sm text-muted-foreground">No requests recorded yet.</p>
+        ) : filtered.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            No traces match these filters.
+          </p>
         ) : (
           <Table>
             <TableHeader>
@@ -56,30 +154,81 @@ export function RequestsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {traces.map((trace) => (
-                <TableRow key={trace.request_id}>
-                  <TableCell>
-                    <Badge variant="secondary" className="font-mono">
-                      {trace.method}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="max-w-64 truncate font-mono text-xs">
-                    {trace.path}
-                  </TableCell>
-                  <TableCell>
-                    <HttpStatusBadge code={trace.status_code} />
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {trace.duration_ms} ms
-                  </TableCell>
-                  <TableCell className="text-right text-xs text-muted-foreground">
-                    {new Date(trace.started_at).toLocaleTimeString()}
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-xs text-muted-foreground">
-                    {trace.request_id.slice(0, 8)}…
-                  </TableCell>
-                </TableRow>
-              ))}
+              {filtered.map((trace) => {
+                const isExpanded = expanded === trace.request_id
+                return (
+                  <Fragment key={trace.request_id}>
+                    <TableRow
+                      className="cursor-pointer"
+                      onClick={() =>
+                        setExpanded(isExpanded ? null : trace.request_id)
+                      }
+                    >
+                      <TableCell>
+                        <span className="flex items-center gap-2">
+                          {isExpanded ? (
+                            <ChevronDown className="size-3.5 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="size-3.5 text-muted-foreground" />
+                          )}
+                          <Badge variant="secondary" className="font-mono">
+                            {trace.method}
+                          </Badge>
+                        </span>
+                      </TableCell>
+                      <TableCell className="max-w-64 truncate font-mono text-xs">
+                        {trace.path}
+                      </TableCell>
+                      <TableCell>
+                        <HttpStatusBadge code={trace.status_code} />
+                      </TableCell>
+                      <TableCell
+                        className={`text-right font-medium tabular-nums ${durationClass(trace.duration_ms)}`}
+                      >
+                        {trace.duration_ms} ms
+                      </TableCell>
+                      <TableCell className="text-right text-xs text-muted-foreground">
+                        {new Date(trace.started_at).toLocaleTimeString()}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs text-muted-foreground">
+                        {trace.request_id.slice(0, 8)}…
+                      </TableCell>
+                    </TableRow>
+                    {isExpanded && (
+                      <TableRow key={`${trace.request_id}-details`}>
+                        <TableCell colSpan={6} className="bg-muted/30">
+                          <dl className="grid gap-3 py-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
+                            <div>
+                              <dt className="text-muted-foreground">Full path</dt>
+                              <dd className="mt-1 break-all font-mono">
+                                {trace.path}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-muted-foreground">Request ID</dt>
+                              <dd className="mt-1 break-all font-mono">
+                                {trace.request_id}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-muted-foreground">Started</dt>
+                              <dd className="mt-1">
+                                {new Date(trace.started_at).toLocaleString()}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-muted-foreground">Duration</dt>
+                              <dd className="mt-1 font-medium tabular-nums">
+                                {trace.duration_ms} ms
+                              </dd>
+                            </div>
+                          </dl>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
+                )
+              })}
             </TableBody>
           </Table>
         )}

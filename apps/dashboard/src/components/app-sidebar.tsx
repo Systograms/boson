@@ -7,6 +7,7 @@ import {
   HeartPulse,
   ListTree,
   Settings2,
+  ShieldCheck,
   Users,
   Workflow,
 } from 'lucide-react'
@@ -24,18 +25,31 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
 
-export type PageId = 'overview' | 'health' | 'requests' | 'configuration'
+export type PageId =
+  | 'overview'
+  | 'health'
+  | 'requests'
+  | 'administrators'
+  | 'organizations'
+  | 'configuration'
+  | 'events'
+  | 'jobs'
 
 const OPERATIONS: Array<{ id: PageId; title: string; icon: typeof Gauge }> = [
   { id: 'overview', title: 'Overview', icon: Gauge },
   { id: 'health', title: 'Health', icon: HeartPulse },
   { id: 'requests', title: 'Requests', icon: Activity },
+  { id: 'administrators', title: 'Administrators', icon: ShieldCheck },
   { id: 'configuration', title: 'Configuration', icon: Settings2 },
 ]
 
-const PLATFORM = [
-  { title: 'Events', icon: Workflow },
-  { title: 'Jobs', icon: ListTree },
+const PLATFORM: Array<{ id: PageId; title: string; icon: typeof Gauge }> = [
+  { id: 'organizations', title: 'Organizations', icon: Users },
+  { id: 'events', title: 'Events', icon: Workflow },
+  { id: 'jobs', title: 'Jobs', icon: ListTree },
+]
+
+const COMING_SOON = [
   { title: 'Users', icon: Users },
   { title: 'Storage', icon: ArchiveX },
   { title: 'Audit', icon: FileClock },
@@ -85,6 +99,14 @@ export function AppSidebar({
           <SidebarGroupContent>
             <SidebarMenu>
               {PLATFORM.map((item) => (
+                <SidebarMenuItem key={item.id}>
+                  <SidebarMenuButton isActive={page === item.id} onClick={() => onNavigate(item.id)}>
+                    <item.icon />
+                    <span>{item.title}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+              {COMING_SOON.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton disabled className="opacity-60">
                     <item.icon />

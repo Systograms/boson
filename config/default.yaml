@@ -18,3 +18,21 @@ telemetry:
 
 admin:
   bootstrap_token: ""
+
+auth:
+  issuer: boson
+  jwt_secret: ""
+  access_ttl_seconds: 900
+  refresh_ttl_days: 30
+
+storage:
+  provider: local
+  local_root: data/storage
+  public_base_url: ""
+
+queue:
+  provider: postgres
+  poll_interval_ms: 1000
+  batch_size: 25
+  visibility_timeout_seconds: 60
+  max_attempts: 5

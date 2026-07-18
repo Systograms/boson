@@ -142,6 +142,46 @@ impl CapabilityRegistry {
             .map(|capability| capability.descriptor())
             .collect()
     }
+
+    #[must_use]
+    pub fn event_consumers(&self) -> Vec<Arc<dyn EventConsumer>> {
+        self.capabilities
+            .iter()
+            .flat_map(|capability| capability.event_consumers())
+            .collect()
+    }
+
+    #[must_use]
+    pub fn job_handlers(&self) -> Vec<Arc<dyn JobHandler>> {
+        self.capabilities
+            .iter()
+            .flat_map(|capability| capability.job_handlers())
+            .collect()
+    }
+
+    #[must_use]
+    pub fn schedules(&self) -> Vec<Schedule> {
+        self.capabilities
+            .iter()
+            .flat_map(|capability| capability.schedules())
+            .collect()
+    }
+
+    #[must_use]
+    pub fn health_checks(&self) -> Vec<Arc<dyn HealthCheck>> {
+        self.capabilities
+            .iter()
+            .flat_map(|capability| capability.health_checks())
+            .collect()
+    }
+
+    #[must_use]
+    pub fn migrations(&self) -> Vec<MigrationSet> {
+        self.capabilities
+            .iter()
+            .filter_map(|capability| capability.migrations())
+            .collect()
+    }
 }
 
 #[cfg(test)]

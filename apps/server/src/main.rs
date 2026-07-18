@@ -1,6 +1,6 @@
 use std::{env, sync::Arc, time::Instant};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use axum::{
     Json, Router,
     extract::{Request, State},
@@ -9,33 +9,28 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
+use boson_admin::{AdminAuth, AdminCapability};
+use boson_capability::CapabilityRegistry;
 use boson_db::Database;
-use boson_kernel::{PlatformConfig, RequestContext, init_telemetry};
-use boson_ops::{OpsState, RequestTrace};
+use boson_event_log::EventsCapability;
+use boson_files::FilesCapability;
+use boson_identity::IdentityCapability;
+use boson_jobs::JobsCapability;
+use boson_kernel::{PlatformConfig, QueueConfig, RequestContext, StorageConfig, init_telemetry};
+use boson_ops::{OpsCapability, OpsState, RequestTrace};
+use boson_organizations::OrganizationsCapability;
+use boson_ports::{ObjectStore, Queue};
+use boson_queue_postgres::PostgresQueue;
+use boson_storage_local::LocalObjectStore;
 use chrono::Utc;
-use serde::Serialize;
 use serde_json::{Value, json};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 #[derive(Clone)]
 struct AppState {
-    config: Arc<PlatformConfig>,
     database: Option<Database>,
+    admin_auth: AdminAuth,
     ops: OpsState,
-}
-
-#[derive(Serialize)]
-struct HealthResponse {
-    status: &'static str,
-    version: &'static str,
-    checks: Vec<HealthCheck>,
-}
-
-#[derive(Serialize)]
-struct HealthCheck {
-    name: &'static str,
-    status: &'static str,
-    message: Option<String>,
 }
 
 #[tokio::main]
@@ -59,13 +54,41 @@ async fn main() -> Result<()> {
         None
     };
 
+    let ops = OpsState::default();
+    let admin_auth = AdminAuth::new(database.clone(), &config.admin);
+    let mut capabilities = CapabilityRegistry::default();
+    capabilities.register(Arc::new(OpsCapability::new(
+        Arc::clone(&config),
+        database.clone(),
+        ops.clone(),
+    )))?;
+    capabilities.register(Arc::new(AdminCapability::new(database.clone())))?;
+    let identity = IdentityCapability::new(database.clone(), &config.auth);
+    let identity_auth = identity.auth();
+    let identity_directory = identity.directory();
+    capabilities.register(Arc::new(identity))?;
+    capabilities.register(Arc::new(OrganizationsCapability::new(
+        database.clone(),
+        identity_auth.clone(),
+        identity_directory,
+    )))?;
+    let object_store = build_object_store(&config.storage).await?;
+    capabilities.register(Arc::new(FilesCapability::new(
+        database.clone(),
+        identity_auth,
+        object_store,
+    )))?;
+    let queue = build_queue(&config.queue, database.as_ref())?;
+    capabilities.register(Arc::new(JobsCapability::new(queue)))?;
+    capabilities.register(Arc::new(EventsCapability::new(database.clone())))?;
+
     let address = format!("{}:{}", config.http.host, config.http.port);
     let state = AppState {
-        config,
         database,
-        ops: OpsState::default(),
+        admin_auth,
+        ops,
     };
-    let app = build_router(state);
+    let app = build_router(state, &capabilities);
     let listener = tokio::net::TcpListener::bind(&address).await?;
     tracing::info!(%address, "Boson server listening");
 
@@ -75,23 +98,52 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn build_router(state: AppState) -> Router {
-    let admin = Router::new()
-        .route("/health", get(admin_health))
-        .route("/overview", get(admin_overview))
-        .route("/requests", get(admin_requests))
-        .route("/config", get(admin_config))
-        .route_layer(middleware::from_fn_with_state(state.clone(), require_admin));
+/// Selects the concrete object store adapter. Only `local` exists today;
+/// any other provider is a startup failure, never a silent fallback.
+async fn build_object_store(storage: &StorageConfig) -> Result<Arc<dyn ObjectStore>> {
+    match storage.provider.as_str() {
+        "local" => {
+            let store = LocalObjectStore::open(&storage.local_root)
+                .await
+                .context("open local object store root")?;
+            Ok(Arc::new(store))
+        }
+        other => bail!("unsupported storage.provider `{other}`; only `local` is supported"),
+    }
+}
 
-    Router::new()
+fn build_queue(
+    config: &QueueConfig,
+    database: Option<&Database>,
+) -> Result<Option<Arc<dyn Queue>>> {
+    match config.provider.as_str() {
+        "postgres" => Ok(database.map(|database| {
+            Arc::new(PostgresQueue::new(
+                database.pool().clone(),
+                config.max_attempts,
+            )) as Arc<dyn Queue>
+        })),
+        other => bail!("unsupported queue.provider `{other}`; only `postgres` is supported"),
+    }
+}
+
+fn build_router(state: AppState, capabilities: &CapabilityRegistry) -> Router {
+    let admin = capabilities
+        .admin_router()
+        .route_layer(middleware::from_fn_with_state(state.clone(), require_admin));
+    let core = Router::new()
         .route("/", get(root))
         .route("/healthz", get(liveness))
         .route("/readyz", get(readiness))
+        .with_state(state.clone());
+
+    Router::new()
+        .merge(core)
+        .nest("/v1", capabilities.app_router())
         .nest("/admin/v1", admin)
         .layer(middleware::from_fn_with_state(state.clone(), trace_request))
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
-        .with_state(state)
 }
 
 async fn root() -> Json<Value> {
@@ -123,103 +175,14 @@ async fn readiness(State(state): State<AppState>) -> impl IntoResponse {
     }
 }
 
-async fn admin_health(State(state): State<AppState>) -> Json<HealthResponse> {
-    let database = match &state.database {
-        Some(database) => match database.ping().await {
-            Ok(()) => HealthCheck {
-                name: "postgres",
-                status: "ok",
-                message: None,
-            },
-            Err(error) => HealthCheck {
-                name: "postgres",
-                status: "down",
-                message: Some(error.to_string()),
-            },
-        },
-        None => HealthCheck {
-            name: "postgres",
-            status: "disabled",
-            message: Some("set database.connect_on_boot=true to enable".into()),
-        },
-    };
-    let worker = match &state.database {
-        Some(database) => match database.worker_heartbeats().await {
-            Ok(workers)
-                if workers
-                    .iter()
-                    .any(|worker| (Utc::now() - worker.last_heartbeat).num_seconds() < 30) =>
-            {
-                HealthCheck {
-                    name: "worker",
-                    status: "ok",
-                    message: None,
-                }
-            }
-            Ok(_) => HealthCheck {
-                name: "worker",
-                status: "down",
-                message: Some("no recent worker heartbeat".into()),
-            },
-            Err(error) => HealthCheck {
-                name: "worker",
-                status: "down",
-                message: Some(error.to_string()),
-            },
-        },
-        None => HealthCheck {
-            name: "worker",
-            status: "disabled",
-            message: Some("worker health requires PostgreSQL".into()),
-        },
-    };
-    let status = if database.status == "down" || worker.status == "down" {
-        "degraded"
-    } else {
-        "ok"
-    };
-    Json(HealthResponse {
-        status,
-        version: env!("CARGO_PKG_VERSION"),
-        checks: vec![database, worker],
-    })
-}
-
-async fn admin_overview(State(state): State<AppState>) -> Json<Value> {
-    let workers = match &state.database {
-        Some(database) => database
-            .worker_heartbeats()
-            .await
-            .map_or_else(|_| json!([]), |workers| json!(workers)),
-        None => json!(state.ops.workers().await),
-    };
-    Json(json!({
-        "metrics": state.ops.overview().await,
-        "workers": workers
-    }))
-}
-
-async fn admin_requests(State(state): State<AppState>) -> Json<Value> {
-    Json(json!({ "data": state.ops.traces().await }))
-}
-
-async fn admin_config(State(state): State<AppState>) -> Json<Value> {
-    Json(json!({
-        "snapshot_id": state.config.snapshot_id(),
-        "effective": state.config.redacted(),
-        "read_only": true
-    }))
-}
-
 async fn require_admin(State(state): State<AppState>, request: Request, next: Next) -> Response {
-    let expected = &state.config.admin.bootstrap_token;
     let supplied = request
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "));
 
-    if expected.is_empty() || supplied != Some(expected.as_str()) {
+    let Some(token) = supplied else {
         return (
             StatusCode::UNAUTHORIZED,
             Json(json!({
@@ -230,8 +193,15 @@ async fn require_admin(State(state): State<AppState>, request: Request, next: Ne
             })),
         )
             .into_response();
+    };
+    match state.admin_auth.authenticate(token).await {
+        Ok(principal) => {
+            let mut request = request;
+            request.extensions_mut().insert(principal);
+            next.run(request).await
+        }
+        Err(error) => error.into_response(),
     }
-    next.run(request).await
 }
 
 async fn trace_request(
@@ -288,4 +258,18 @@ async fn shutdown_signal() {
         () = terminate => {},
     }
     tracing::info!("shutdown signal received");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_queue_provider_fails_closed() {
+        let config = QueueConfig {
+            provider: "memory".into(),
+            ..QueueConfig::default()
+        };
+        assert!(build_queue(&config, None).is_err());
+    }
 }

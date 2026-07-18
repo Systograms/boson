@@ -24,9 +24,14 @@ services:
       BOSON__DATABASE__CONNECT_ON_BOOT: "true"
       BOSON__DATABASE__RUN_MIGRATIONS: "true"
       BOSON__ADMIN__BOOTSTRAP_TOKEN: local-development-token
+      BOSON__AUTH__JWT_SECRET: local-development-jwt-secret
+      BOSON__STORAGE__LOCAL_ROOT: /var/lib/boson/storage
+      BOSON__QUEUE__PROVIDER: postgres
       BOSON__TELEMETRY__JSON: "true"
     ports:
       - "8080:8080"
+    volumes:
+      - boson-storage:/var/lib/boson/storage
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,6 +46,15 @@ services:
       BOSON__DATABASE__CONNECT_ON_BOOT: "true"
       BOSON__DATABASE__RUN_MIGRATIONS: "false"
       BOSON__ADMIN__BOOTSTRAP_TOKEN: local-development-token
+      BOSON__AUTH__JWT_SECRET: local-development-jwt-secret
+      BOSON__STORAGE__LOCAL_ROOT: /var/lib/boson/storage
+      BOSON__QUEUE__PROVIDER: postgres
+      BOSON__QUEUE__POLL_INTERVAL_MS: "1000"
+      BOSON__QUEUE__BATCH_SIZE: "25"
+      BOSON__QUEUE__VISIBILITY_TIMEOUT_SECONDS: "60"
+      BOSON__QUEUE__MAX_ATTEMPTS: "5"
+    volumes:
+      - boson-storage:/var/lib/boson/storage
     depends_on:
       server:
         condition: service_started
@@ -58,3 +72,4 @@ services:
 
 volumes:
   boson-postgres:
+  boson-storage:

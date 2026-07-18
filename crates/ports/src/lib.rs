@@ -4,6 +4,7 @@ use std::{collections::BTreeMap, time::Duration};
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -74,7 +75,30 @@ pub struct JobEnvelope {
     pub topic: String,
     pub payload: serde_json::Value,
     pub attempts: u32,
+    pub max_attempts: u32,
     pub correlation_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JobStatus {
+    Pending,
+    Running,
+    Completed,
+    Failed,
+    Dead,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JobRecord {
+    pub envelope: JobEnvelope,
+    pub status: JobStatus,
+    pub run_at: DateTime<Utc>,
+    pub locked_at: Option<DateTime<Utc>>,
+    pub locked_by: Option<String>,
+    pub last_error: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[async_trait]
@@ -84,8 +108,19 @@ pub trait Queue: HealthCheck + Send + Sync {
         &self,
         limit: usize,
         visibility: Duration,
+        worker_id: &str,
     ) -> Result<Vec<JobEnvelope>, PortError>;
-    async fn acknowledge(&self, id: &str) -> Result<(), PortError>;
-    async fn retry(&self, id: &str) -> Result<(), PortError>;
-    async fn list(&self, limit: usize) -> Result<Vec<JobEnvelope>, PortError>;
+    async fn acknowledge(&self, id: &str, worker_id: &str) -> Result<(), PortError>;
+    /// Releases a leased job. The adapter increments attempts and marks the job
+    /// dead once `max_attempts` is reached.
+    async fn retry(
+        &self,
+        id: &str,
+        worker_id: &str,
+        error: Option<&str>,
+        delay: Duration,
+    ) -> Result<JobStatus, PortError>;
+    /// Manually requeues a failed or dead job without erasing its history.
+    async fn requeue(&self, id: &str) -> Result<(), PortError>;
+    async fn list(&self, limit: usize) -> Result<Vec<JobRecord>, PortError>;
 }

@@ -24,19 +24,51 @@ export class AdminApiError extends Error {
   }
 }
 
-export async function adminGet<T>(endpoint: string): Promise<T> {
+async function adminRequest<T>(
+  endpoint: string,
+  init?: RequestInit,
+): Promise<T> {
   let response: Response
   try {
     response = await fetch(`${SERVER_URL}/admin/v1/${endpoint}`, {
-      headers: { Authorization: `Bearer ${getToken()}` },
+      ...init,
+      headers: {
+        Authorization: `Bearer ${getToken()}`,
+        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+        ...init?.headers,
+      },
     })
   } catch {
     throw new AdminApiError('Unable to reach the Boson server')
   }
   if (!response.ok) {
-    throw new AdminApiError(`Admin API returned ${response.status}`, response.status)
+    let message = `Admin API returned ${response.status}`
+    try {
+      const body = (await response.json()) as {
+        error?: { message?: string } | string
+      }
+      if (typeof body.error === 'string') message = body.error
+      else if (body.error?.message) message = body.error.message
+    } catch {
+      // Keep the status-based fallback for empty or non-JSON responses.
+    }
+    throw new AdminApiError(message, response.status)
   }
   return response.json() as Promise<T>
+}
+
+export function adminGet<T>(endpoint: string): Promise<T> {
+  return adminRequest<T>(endpoint)
+}
+
+export function adminPost<T>(
+  endpoint: string,
+  body: unknown,
+): Promise<T> {
+  return adminRequest<T>(endpoint, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }
 
 export type HealthCheck = {
@@ -74,4 +106,135 @@ export type AdminConfig = {
   snapshot_id: string
   effective: Record<string, unknown>
   read_only: boolean
+}
+
+export type AdminUser = {
+  id: string
+  email: string
+  display_name: string
+  disabled_at: string | null
+  created_at: string
+}
+
+export type AdminApiKey = {
+  id: string
+  admin_id: string
+  name: string
+  token_prefix: string
+  scopes: string[]
+  last_used_at: string | null
+  expires_at: string | null
+  revoked_at: string | null
+  created_at: string
+}
+
+export type AdminPrincipal = {
+  admin_id: string | null
+  email: string | null
+  scopes: string[]
+  bootstrap: boolean
+}
+
+export type IssuedCredential = {
+  admin: AdminUser
+  key: AdminApiKey
+  token: string
+}
+
+export type IssuedApiKey = Pick<
+  AdminApiKey,
+  'id' | 'admin_id' | 'name' | 'token_prefix' | 'scopes'
+> & {
+  token: string
+}
+
+export type Organization = {
+  id: string
+  name: string
+  slug: string
+  created_by: string
+  member_count: number
+  created_at: string
+  updated_at: string
+}
+
+export type OrganizationMembership = {
+  organization_id: string
+  user_id: string
+  role: 'owner' | 'admin' | 'member'
+  joined_at: string
+  updated_at: string
+}
+
+export type OrganizationInvitation = {
+  id: string
+  organization_id: string
+  email: string
+  role: 'owner' | 'admin' | 'member'
+  expires_at: string
+  accepted_at: string | null
+  revoked_at: string | null
+  invited_by: string
+  created_at: string
+}
+
+export type JobRecord = {
+  envelope: {
+    id: string
+    topic: string
+    payload: unknown
+    attempts: number
+    max_attempts: number
+    correlation_id: string | null
+  }
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'dead'
+  run_at: string
+  locked_at: string | null
+  locked_by: string | null
+  last_error: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type EventRecord = {
+  id: string
+  topic: string
+  payload: unknown
+  correlation_id: string | null
+  occurred_at: string
+  status: 'pending' | 'processing' | 'dispatched'
+  attempts: number
+  run_at: string
+  locked_at: string | null
+  locked_by: string | null
+  last_error: string | null
+  dispatched_at: string | null
+  created_at: string
+}
+
+export type EventDelivery = {
+  consumer: string
+  status: 'pending' | 'succeeded' | 'failed'
+  attempts: number
+  last_error: string | null
+  first_attempted_at: string | null
+  last_attempted_at: string | null
+  delivered_at: string | null
+}
+
+export type EventDetail = {
+  event: EventRecord
+  deliveries: EventDelivery[]
+}
+
+export function hasScope(
+  principal: AdminPrincipal | null,
+  scope: string,
+): boolean {
+  return Boolean(
+    principal &&
+      (principal.bootstrap ||
+        principal.scopes.includes('*') ||
+        principal.scopes.includes(scope)),
+  )
 }

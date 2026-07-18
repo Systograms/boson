@@ -7,6 +7,7 @@ RUN apt-get update \
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY apps ./apps
 COPY crates ./crates
+COPY adapters ./adapters
 RUN cargo build --release -p boson-server -p boson-worker -p boson-cli
 
 FROM debian:bookworm-slim AS runtime
