@@ -329,13 +329,12 @@ impl PreparedRuntime {
     }
 }
 
-/// Default platform migrations directory resolved from the runtime crate source.
-#[must_use]
-pub fn default_core_migrations_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations")
-}
+static CORE_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations");
 
 /// Applies platform and capability migrations in dependency order.
+///
+/// Platform migrations are embedded in the runtime binary. `core_migrations`
+/// remains available as an explicit override for development and testing.
 ///
 /// Capability migrations are tracked in `_sqlx_migrations_<owner>` tables so
 /// they never collide with the platform `_sqlx_migrations` history.
@@ -348,15 +347,19 @@ pub async fn run_migrations(
     core_migrations: Option<&Path>,
     capability_migrations: &[MigrationSet],
 ) -> Result<()> {
-    let default_core = default_core_migrations_path();
-    let core = core_migrations.unwrap_or(default_core.as_path());
-    if core.exists() {
+    if let Some(core) = core_migrations {
+        if !core.exists() {
+            bail!("core migrations path {} does not exist", core.display());
+        }
         database
             .migrate(core)
             .await
             .with_context(|| format!("run core migrations from {}", core.display()))?;
     } else {
-        bail!("core migrations path {} does not exist", core.display());
+        database
+            .migrate_embedded(&CORE_MIGRATOR)
+            .await
+            .context("run embedded core migrations")?;
     }
     for migration in capability_migrations {
         if !migration.path.exists() {
@@ -681,6 +684,18 @@ async fn shutdown_signal() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn core_migrations_are_embedded_in_release_order() {
+        let versions = CORE_MIGRATOR
+            .iter()
+            .map(|migration| migration.version)
+            .collect::<Vec<_>>();
+
+        assert_eq!(versions.len(), 9);
+        assert_eq!(versions.first(), Some(&20_260_718_110_000));
+        assert_eq!(versions.last(), Some(&20_260_718_190_000));
+    }
 
     #[test]
     fn event_and_job_backoff_is_bounded() {

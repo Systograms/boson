@@ -61,6 +61,15 @@ impl Database {
         self.migrate_with_table(path, "_sqlx_migrations").await
     }
 
+    /// Applies migrations compiled into the calling application.
+    pub async fn migrate_embedded(
+        &self,
+        migrator: &sqlx::migrate::Migrator,
+    ) -> Result<(), DatabaseError> {
+        migrator.run(&self.pool).await?;
+        Ok(())
+    }
+
     /// Applies migrations tracked in a dedicated table.
     ///
     /// Capability-owned migration directories should use a unique table so they

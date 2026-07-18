@@ -26,7 +26,8 @@ Production packaging deploys independent units:
 
 - Server owns public and Admin HTTP traffic.
 - Worker owns background jobs and event consumers.
-- The migrate binary applies platform and capability migrations before rollout.
+- The migrate binary carries embedded platform migrations and applies them,
+  followed by application capability migrations, before rollout.
 - Dashboard is a static Admin API client.
 
 Production orchestration should run migrations explicitly, deploy Server and

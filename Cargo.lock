@@ -586,6 +586,7 @@ dependencies = [
  "boson-queue-postgres",
  "boson-storage-local",
  "serde_json",
+ "sqlx",
  "tokio",
  "tower-http 0.7.0",
  "tracing",
@@ -2652,6 +2653,7 @@ dependencies = [
  "sqlx-postgres",
  "sqlx-sqlite",
  "syn",
+ "thiserror",
  "tokio",
  "url",
 ]
