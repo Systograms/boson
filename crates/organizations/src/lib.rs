@@ -733,7 +733,8 @@ async fn create_invitation(
             "email": email,
             "role": role,
             "invited_by": user.user_id,
-            "expires_at": expires_at
+            "expires_at": expires_at,
+            "token": &token
         }),
         Some(context.request_id),
     )

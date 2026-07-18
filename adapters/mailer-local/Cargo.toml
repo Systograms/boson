@@ -1,0 +1,21 @@
+[package]
+name = "boson-mailer-local"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1.89"
+boson-ports = { version = "0.1.0", path = "../../crates/ports" }
+hex = "0.4.3"
+serde_json = "1.0.150"
+sha2 = "0.11.0"
+tokio = { version = "1.53.0", features = ["fs", "io-util"] }
+
+[dev-dependencies]
+tempfile = "3.24.0"
+tokio = { version = "1.53.0", features = ["fs", "macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

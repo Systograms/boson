@@ -352,6 +352,7 @@ dependencies = [
  "boson-admin",
  "boson-capability",
  "boson-db",
+ "boson-events",
  "chrono",
  "serde",
  "serde_json",
@@ -440,6 +441,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "boson-mailer-local"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "boson-ports",
+ "hex",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "boson-notifications"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "boson-admin",
+ "boson-capability",
+ "boson-db",
+ "boson-events",
+ "boson-ports",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "boson-ops"
 version = "0.1.0"
 dependencies = [
@@ -515,6 +548,8 @@ dependencies = [
  "boson-identity",
  "boson-jobs",
  "boson-kernel",
+ "boson-mailer-local",
+ "boson-notifications",
  "boson-ops",
  "boson-organizations",
  "boson-ports",
@@ -557,6 +592,8 @@ dependencies = [
  "boson-identity",
  "boson-jobs",
  "boson-kernel",
+ "boson-mailer-local",
+ "boson-notifications",
  "boson-ops",
  "boson-organizations",
  "boson-ports",

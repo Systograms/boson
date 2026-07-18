@@ -16,6 +16,8 @@ boson-files = { version = "0.1.0", path = "../../crates/files" }
 boson-identity = { version = "0.1.0", path = "../../crates/identity" }
 boson-kernel = { version = "0.1.0", path = "../../crates/kernel" }
 boson-jobs = { version = "0.1.0", path = "../../crates/jobs" }
+boson-mailer-local = { version = "0.1.0", path = "../../adapters/mailer-local" }
+boson-notifications = { version = "0.1.0", path = "../../crates/notifications" }
 boson-ops = { version = "0.1.0", path = "../../crates/ops" }
 boson-organizations = { version = "0.1.0", path = "../../crates/organizations" }
 boson-ports = { version = "0.1.0", path = "../../crates/ports" }

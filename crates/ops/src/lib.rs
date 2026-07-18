@@ -22,6 +22,7 @@ use axum::{
 use boson_capability::{Capability, CapabilityDescriptor};
 use boson_db::Database;
 use boson_kernel::PlatformConfig;
+use boson_ports::HealthCheck;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -85,6 +86,7 @@ pub struct OpsState {
     errors: Arc<AtomicU64>,
     traces: Arc<RwLock<VecDeque<RequestTrace>>>,
     workers: Arc<RwLock<Vec<WorkerStatus>>>,
+    health_checks: Arc<RwLock<Vec<Arc<dyn HealthCheck>>>>,
 }
 
 impl OpsState {
@@ -96,6 +98,7 @@ impl OpsState {
             errors: Arc::new(AtomicU64::new(0)),
             traces: Arc::new(RwLock::new(VecDeque::with_capacity(TRACE_CAPACITY))),
             workers: Arc::new(RwLock::new(Vec::new())),
+            health_checks: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -168,6 +171,24 @@ impl OpsState {
 
     pub async fn workers(&self) -> Vec<WorkerStatus> {
         self.workers.read().await.clone()
+    }
+
+    pub async fn set_health_checks(&self, checks: Vec<Arc<dyn HealthCheck>>) {
+        *self.health_checks.write().await = checks;
+    }
+
+    async fn dependency_health(&self) -> Vec<DependencyHealth> {
+        let checks = self.health_checks.read().await.clone();
+        let mut results = Vec::with_capacity(checks.len());
+        for check in checks {
+            let health = check.check().await;
+            results.push(DependencyHealth {
+                name: health.component,
+                status: if health.healthy { "ok" } else { "down" },
+                message: health.message,
+            });
+        }
+        results
     }
 
     pub async fn overview(&self) -> Overview {
@@ -251,7 +272,7 @@ struct HealthResponse {
 
 #[derive(Serialize)]
 struct DependencyHealth {
-    name: &'static str,
+    name: String,
     status: &'static str,
     message: Option<String>,
 }
@@ -260,18 +281,18 @@ async fn admin_health(State(state): State<OpsCapabilityState>) -> Json<HealthRes
     let database = match &state.database {
         Some(database) => match database.ping().await {
             Ok(()) => DependencyHealth {
-                name: "postgres",
+                name: "postgres".into(),
                 status: "ok",
                 message: None,
             },
             Err(error) => DependencyHealth {
-                name: "postgres",
+                name: "postgres".into(),
                 status: "down",
                 message: Some(error.to_string()),
             },
         },
         None => DependencyHealth {
-            name: "postgres",
+            name: "postgres".into(),
             status: "disabled",
             message: Some("set database.connect_on_boot=true to enable".into()),
         },
@@ -284,29 +305,31 @@ async fn admin_health(State(state): State<OpsCapabilityState>) -> Json<HealthRes
                     .any(|worker| (Utc::now() - worker.last_heartbeat).num_seconds() < 30) =>
             {
                 DependencyHealth {
-                    name: "worker",
+                    name: "worker".into(),
                     status: "ok",
                     message: None,
                 }
             }
             Ok(_) => DependencyHealth {
-                name: "worker",
+                name: "worker".into(),
                 status: "down",
                 message: Some("no recent worker heartbeat".into()),
             },
             Err(error) => DependencyHealth {
-                name: "worker",
+                name: "worker".into(),
                 status: "down",
                 message: Some(error.to_string()),
             },
         },
         None => DependencyHealth {
-            name: "worker",
+            name: "worker".into(),
             status: "disabled",
             message: Some("worker health requires PostgreSQL".into()),
         },
     };
-    let status = if database.status == "down" || worker.status == "down" {
+    let mut checks = vec![database, worker];
+    checks.extend(state.ops.dependency_health().await);
+    let status = if checks.iter().any(|check| check.status == "down") {
         "degraded"
     } else {
         "ok"
@@ -314,7 +337,7 @@ async fn admin_health(State(state): State<OpsCapabilityState>) -> Json<HealthRes
     Json(HealthResponse {
         status,
         version: env!("CARGO_PKG_VERSION"),
-        checks: vec![database, worker],
+        checks,
     })
 }
 

@@ -10,10 +10,12 @@ use boson_events::EventConsumer;
 use boson_files::FilesCapability;
 use boson_identity::IdentityCapability;
 use boson_jobs::JobsCapability;
-use boson_kernel::{PlatformConfig, QueueConfig, StorageConfig, init_telemetry};
+use boson_kernel::{MailConfig, PlatformConfig, QueueConfig, StorageConfig, init_telemetry};
+use boson_mailer_local::LocalMailer;
+use boson_notifications::NotificationsCapability;
 use boson_ops::{OpsCapability, OpsState};
 use boson_organizations::OrganizationsCapability;
-use boson_ports::{ObjectStore, Queue};
+use boson_ports::{Mailer, ObjectStore, Queue};
 use boson_queue_postgres::PostgresQueue;
 use boson_storage_local::LocalObjectStore;
 
@@ -41,6 +43,13 @@ async fn main() -> Result<()> {
         OpsState::new(Some(database.clone())),
     )))?;
     capabilities.register(Arc::new(AdminCapability::new(Some(database.clone()))))?;
+    let mailer = build_mailer(&config.mail).await?;
+    capabilities.register(Arc::new(NotificationsCapability::new(
+        Some(database.clone()),
+        mailer,
+        config.mail.from.clone(),
+        config.mail.public_app_url.clone(),
+    )))?;
     capabilities.register(Arc::new(AuditCapability::new(Some(database.clone()))))?;
     let identity = IdentityCapability::new(Some(database.clone()), &config.auth);
     let identity_auth = identity.auth();
@@ -124,6 +133,17 @@ async fn build_object_store(storage: &StorageConfig) -> Result<Arc<dyn ObjectSto
     }
 }
 
+async fn build_mailer(config: &MailConfig) -> Result<Arc<dyn Mailer>> {
+    match config.provider.as_str() {
+        "local" => Ok(Arc::new(
+            LocalMailer::open(&config.local_root)
+                .await
+                .context("open local mailbox")?,
+        )),
+        other => bail!("unsupported mail.provider `{other}`; only `local` is supported"),
+    }
+}
+
 fn build_queue(config: &QueueConfig, database: &Database) -> Result<Arc<dyn Queue>> {
     match config.provider.as_str() {
         "postgres" => Ok(Arc::new(PostgresQueue::new(
@@ -193,9 +213,7 @@ async fn dispatch_events(
     for event in events {
         let matching = consumers
             .iter()
-            .filter(|consumer| {
-                consumer.topic() == "*" || consumer.topic() == event.envelope.topic
-            })
+            .filter(|consumer| consumer.topic() == "*" || consumer.topic() == event.envelope.topic)
             .collect::<Vec<_>>();
         let delivered = database
             .delivered_consumers(event.envelope.id)

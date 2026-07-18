@@ -10,6 +10,7 @@ use axum::{
 use boson_admin::AdminPrincipal;
 use boson_capability::{Capability, CapabilityDescriptor};
 use boson_db::Database;
+use boson_events::redact_sensitive_payload;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -138,7 +139,7 @@ fn event_from_row(row: &sqlx::postgres::PgRow) -> Result<EventView, EventsError>
     Ok(EventView {
         id: row.try_get("id").map_err(unavailable)?,
         topic: row.try_get("topic").map_err(unavailable)?,
-        payload: row.try_get("payload").map_err(unavailable)?,
+        payload: redact_sensitive_payload(&row.try_get("payload").map_err(unavailable)?),
         correlation_id: row.try_get("correlation_id").map_err(unavailable)?,
         occurred_at: row.try_get("occurred_at").map_err(unavailable)?,
         status: row.try_get("status").map_err(unavailable)?,

@@ -19,6 +19,7 @@ database_inspection:
     - password_hash
     - token_hash
     - refresh_token_hash
+    - payload
     - jwt_secret
     - bootstrap_token
   statement_timeout_ms: 2000
@@ -38,6 +39,8 @@ auth:
   jwt_secret: local-development-jwt-secret
   access_ttl_seconds: 900
   refresh_ttl_days: 30
+  email_verification_ttl_hours: 24
+  password_reset_ttl_minutes: 60
 
 storage:
   provider: local
@@ -50,3 +53,9 @@ queue:
   batch_size: 25
   visibility_timeout_seconds: 60
   max_attempts: 5
+
+mail:
+  provider: local
+  from: "Boson <no-reply@localhost>"
+  local_root: data/mail
+  public_app_url: http://localhost:3000

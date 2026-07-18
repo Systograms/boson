@@ -166,6 +166,19 @@ export type AuditEntry = {
   recorded_at: string
 }
 
+export type NotificationDelivery = {
+  event_id: string
+  kind: string
+  recipient: string
+  subject: string
+  status: 'pending' | 'sent' | 'failed'
+  attempts: number
+  last_error: string | null
+  created_at: string
+  last_attempted_at: string | null
+  sent_at: string | null
+}
+
 export type AdminConfig = {
   snapshot_id: string
   effective: Record<string, unknown>

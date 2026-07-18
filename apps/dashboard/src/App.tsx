@@ -28,6 +28,7 @@ import { DatabasePage } from '@/pages/database'
 import { HealthPage } from '@/pages/health'
 import { EventsPage } from '@/pages/events'
 import { JobsPage } from '@/pages/jobs'
+import { NotificationsPage } from '@/pages/notifications'
 import { OrganizationsPage } from '@/pages/organizations'
 import { OverviewPage } from '@/pages/overview'
 import { RequestsPage } from '@/pages/requests'
@@ -47,6 +48,7 @@ const PAGE_TITLES: Record<PageId, string> = {
   events: 'Events',
   jobs: 'Jobs',
   audit: 'Audit',
+  notifications: 'Notifications',
 }
 
 function pageFromPath(pathname: string): PageId {
@@ -126,6 +128,7 @@ function Shell({ onDisconnect }: { onDisconnect: () => void }) {
               path="/jobs"
               element={<JobsPage principal={session.data} />}
             />
+            <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/audit" element={<AuditPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

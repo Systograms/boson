@@ -2,6 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import {
   Activity,
   ArchiveX,
+  Bell,
   Boxes,
   Database,
   FileClock,
@@ -40,6 +41,7 @@ export type PageId =
   | 'events'
   | 'jobs'
   | 'audit'
+  | 'notifications'
 
 type NavItem = { path: string; title: string; icon: typeof Gauge }
 
@@ -58,6 +60,7 @@ const PLATFORM: NavItem[] = [
   { path: '/storage', title: 'Storage', icon: ArchiveX },
   { path: '/events', title: 'Events', icon: Workflow },
   { path: '/jobs', title: 'Jobs', icon: ListTree },
+  { path: '/notifications', title: 'Notifications', icon: Bell },
   { path: '/audit', title: 'Audit', icon: FileClock },
 ]
 

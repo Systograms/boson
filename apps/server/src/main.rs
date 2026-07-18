@@ -18,10 +18,14 @@ use boson_event_log::EventsCapability;
 use boson_files::FilesCapability;
 use boson_identity::IdentityCapability;
 use boson_jobs::JobsCapability;
-use boson_kernel::{PlatformConfig, QueueConfig, RequestContext, StorageConfig, init_telemetry};
+use boson_kernel::{
+    MailConfig, PlatformConfig, QueueConfig, RequestContext, StorageConfig, init_telemetry,
+};
+use boson_mailer_local::LocalMailer;
+use boson_notifications::NotificationsCapability;
 use boson_ops::{OpsCapability, OpsState, RequestTrace};
 use boson_organizations::OrganizationsCapability;
-use boson_ports::{DatabaseInspector, ObjectStore, Queue};
+use boson_ports::{DatabaseInspector, Mailer, ObjectStore, Queue};
 use boson_queue_postgres::PostgresQueue;
 use boson_storage_local::LocalObjectStore;
 use serde_json::{Value, json};
@@ -64,6 +68,13 @@ async fn main() -> Result<()> {
         ops.clone(),
     )))?;
     capabilities.register(Arc::new(AdminCapability::new(database.clone())))?;
+    let mailer = build_mailer(&config.mail).await?;
+    capabilities.register(Arc::new(NotificationsCapability::new(
+        database.clone(),
+        mailer,
+        config.mail.from.clone(),
+        config.mail.public_app_url.clone(),
+    )))?;
     capabilities.register(Arc::new(AuditCapability::new(database.clone())))?;
     let database_inspector = if config.database_inspection.enabled {
         database.as_ref().map(|database| {
@@ -96,6 +107,7 @@ async fn main() -> Result<()> {
     let queue = build_queue(&config.queue, database.as_ref())?;
     capabilities.register(Arc::new(JobsCapability::new(queue)))?;
     capabilities.register(Arc::new(EventsCapability::new(database.clone())))?;
+    ops.set_health_checks(capabilities.health_checks()).await;
 
     let address = format!("{}:{}", config.http.host, config.http.port);
     let state = AppState {
@@ -124,6 +136,17 @@ async fn build_object_store(storage: &StorageConfig) -> Result<Arc<dyn ObjectSto
             Ok(Arc::new(store))
         }
         other => bail!("unsupported storage.provider `{other}`; only `local` is supported"),
+    }
+}
+
+async fn build_mailer(config: &MailConfig) -> Result<Arc<dyn Mailer>> {
+    match config.provider.as_str() {
+        "local" => Ok(Arc::new(
+            LocalMailer::open(&config.local_root)
+                .await
+                .context("open local mailbox")?,
+        )),
+        other => bail!("unsupported mail.provider `{other}`; only `local` is supported"),
     }
 }
 

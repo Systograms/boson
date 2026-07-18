@@ -37,6 +37,9 @@ capabilities; billing remains out of scope.
 | `boson-queue-postgres` | Durable at-least-once PostgreSQL queue adapter |
 | `boson-jobs` | Scoped Admin job inspection and manual retry APIs |
 | `boson-event-log` | Scoped Admin outbox and delivery inspection APIs |
+| `boson-audit` | Immutable, redacted event-derived audit trail |
+| `boson-notifications` | Event-driven email rendering and durable delivery history |
+| `boson-mailer-local` | Idempotent development mailbox (`adapters/mailer-local`) |
 
 Dependency direction:
 
@@ -90,6 +93,7 @@ docker compose up --build
 The compose stack enables PostgreSQL, applies migrations, starts the worker,
 and serves the dashboard. Uploaded files persist in the `boson-storage` named
 volume, mounted at `/var/lib/boson/storage` in the server and worker.
+Development email persists in the `boson-mail` volume as JSON messages.
 
 ## APIs currently available
 
@@ -106,6 +110,13 @@ End-user identity (requires PostgreSQL and `auth.jwt_secret`):
 - `POST /v1/auth/refresh` — rotates the refresh token transactionally
 - `POST /v1/auth/logout` — revokes the refresh session
 - `GET /v1/auth/me` — requires a Bearer access token
+- `POST /v1/auth/email-verification/request` — issues a new verification email
+  for the authenticated user
+- `POST /v1/auth/email-verification/confirm` — consumes a one-time token
+- `POST /v1/auth/password-reset/request` — always returns `202` to prevent
+  account enumeration
+- `POST /v1/auth/password-reset/confirm` — changes the password, consumes the
+  token, and revokes every refresh session
 
 Files (requires a Bearer access token, PostgreSQL, and configured storage):
 
@@ -146,6 +157,9 @@ Admin (Bearer token required):
   (`events:read` scope)
 - `GET /admin/v1/database`, `/database/tables`, and table schema/row routes
   (`database:read` scope; read-only, paginated, and redacted)
+- `GET /admin/v1/audit` (`audit:read` scope)
+- `GET /admin/v1/notifications` — sent/failed email metadata without bodies or
+  action tokens (`notifications:read` scope)
 
 ## Configuration
 
@@ -171,6 +185,11 @@ for configured `redacted_columns` are never selected from the provider.
 
 Object storage is selected by `storage.provider` at the composition root.
 Only `local` is supported today; any other value fails startup.
+
+Email is selected by `mail.provider`. The `local` adapter writes one JSON file
+per idempotency key and is intended for development. Verification, password
+reset, and organization invitation email are dispatched by the Worker from
+transactional outbox events.
 
 The background queue is configured under `queue` and currently requires the
 `postgres` provider. Workers lease due jobs with `SKIP LOCKED`; expired leases
@@ -203,8 +222,8 @@ npm run build --prefix apps/docs
 7. Provider implementations remain behind small ports.
 8. Deployment packaging never leaks into application logic.
 
-## Next vertical slice
+## Next product phase
 
-The next product slice should be Admin bootstrap identity followed by end-user
-identity. It should add real capability registration, migrations, App/Admin
-routes, audit events, and integration tests without widening the kernel.
+The SaaS foundation is complete. The next phase is the public Capability SDK,
+CLI onboarding (`boson init`, `boson dev`), and example applications that prove
+third-party product capabilities can compose cleanly with the platform.

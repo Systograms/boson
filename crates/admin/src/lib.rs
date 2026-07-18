@@ -33,6 +33,7 @@ const DEFAULT_SCOPES: &[&str] = &[
     "events:read",
     "jobs:read",
     "jobs:write",
+    "notifications:read",
     "storage:read",
     "storage:write",
 ];

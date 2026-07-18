@@ -57,6 +57,7 @@ const AVAILABLE_SCOPES = [
   'events:read',
   'jobs:read',
   'jobs:write',
+  'notifications:read',
 ]
 
 type AdminAction =

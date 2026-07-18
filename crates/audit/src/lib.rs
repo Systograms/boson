@@ -19,7 +19,7 @@ use axum::{
 use boson_admin::AdminPrincipal;
 use boson_capability::{Capability, CapabilityDescriptor};
 use boson_db::Database;
-use boson_events::{EventConsumer, EventEnvelope, EventError};
+use boson_events::{EventConsumer, EventEnvelope, EventError, redact_sensitive_payload};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -95,7 +95,7 @@ impl EventConsumer for AuditRecorder {
         )
         .bind(event.id)
         .bind(&event.topic)
-        .bind(&event.payload)
+        .bind(redact_sensitive_payload(&event.payload))
         .bind(&event.correlation_id)
         .bind(event.occurred_at)
         .execute(self.database.pool())

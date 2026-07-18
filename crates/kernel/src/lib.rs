@@ -24,6 +24,7 @@ pub struct PlatformConfig {
     pub auth: AuthConfig,
     pub storage: StorageConfig,
     pub queue: QueueConfig,
+    pub mail: MailConfig,
     pub database_inspection: DatabaseInspectionConfig,
 }
 
@@ -73,6 +74,12 @@ impl PlatformConfig {
         }
         if let Some(storage) = value.get_mut("storage").and_then(|v| v.as_object_mut()) {
             storage.insert(
+                "local_root".into(),
+                serde_json::Value::String("[REDACTED]".into()),
+            );
+        }
+        if let Some(mail) = value.get_mut("mail").and_then(|v| v.as_object_mut()) {
+            mail.insert(
                 "local_root".into(),
                 serde_json::Value::String("[REDACTED]".into()),
             );
@@ -157,6 +164,7 @@ impl Default for DatabaseInspectionConfig {
                 "password_hash".into(),
                 "token_hash".into(),
                 "refresh_token_hash".into(),
+                "payload".into(),
                 "jwt_secret".into(),
                 "bootstrap_token".into(),
             ],
@@ -201,6 +209,10 @@ pub struct AuthConfig {
     pub access_ttl_seconds: u64,
     /// Refresh session lifetime in days.
     pub refresh_ttl_days: u64,
+    /// Email verification link lifetime in hours.
+    pub email_verification_ttl_hours: u64,
+    /// Password reset link lifetime in minutes.
+    pub password_reset_ttl_minutes: u64,
 }
 
 impl Default for AuthConfig {
@@ -210,6 +222,8 @@ impl Default for AuthConfig {
             jwt_secret: String::new(),
             access_ttl_seconds: 900,
             refresh_ttl_days: 30,
+            email_verification_ttl_hours: 24,
+            password_reset_ttl_minutes: 60,
         }
     }
 }
@@ -248,6 +262,31 @@ impl Default for QueueConfig {
             batch_size: 25,
             visibility_timeout_seconds: 60,
             max_attempts: 5,
+        }
+    }
+}
+
+/// Email delivery settings selected by the Server and Worker composition roots.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct MailConfig {
+    /// Mail provider. Only `local` is supported today.
+    pub provider: String,
+    /// Sender stamped on platform email.
+    pub from: String,
+    /// Directory where the local adapter writes JSON messages.
+    pub local_root: String,
+    /// Browser-facing application URL used to construct action links.
+    pub public_app_url: String,
+}
+
+impl Default for MailConfig {
+    fn default() -> Self {
+        Self {
+            provider: "local".into(),
+            from: "Boson <no-reply@localhost>".into(),
+            local_root: "data/mail".into(),
+            public_app_url: "http://localhost:3000".into(),
         }
     }
 }
@@ -329,6 +368,7 @@ mod tests {
         assert_eq!(redacted["admin"]["bootstrap_token"], "[REDACTED]");
         assert_eq!(redacted["auth"]["jwt_secret"], "[REDACTED]");
         assert_eq!(redacted["storage"]["local_root"], "[REDACTED]");
+        assert_eq!(redacted["mail"]["local_root"], "[REDACTED]");
     }
 
     #[test]
@@ -343,6 +383,8 @@ mod tests {
         let auth = AuthConfig::default();
         assert_eq!(auth.access_ttl_seconds, 900);
         assert_eq!(auth.refresh_ttl_days, 30);
+        assert_eq!(auth.email_verification_ttl_hours, 24);
+        assert_eq!(auth.password_reset_ttl_minutes, 60);
         assert_eq!(auth.issuer, "boson");
     }
 

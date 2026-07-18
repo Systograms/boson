@@ -174,6 +174,8 @@ struct IdentityState {
     database: Option<Database>,
     auth: IdentityAuth,
     refresh_ttl_days: u64,
+    email_verification_ttl_hours: u64,
+    password_reset_ttl_minutes: u64,
 }
 
 #[derive(Clone)]
@@ -189,6 +191,8 @@ impl IdentityCapability {
                 database,
                 auth: IdentityAuth::new(config),
                 refresh_ttl_days: config.refresh_ttl_days,
+                email_verification_ttl_hours: config.email_verification_ttl_hours,
+                password_reset_ttl_minutes: config.password_reset_ttl_minutes,
             },
         }
     }
@@ -218,6 +222,10 @@ impl Capability for IdentityCapability {
     fn app_router(&self) -> Router {
         let protected = Router::new()
             .route("/auth/me", get(me))
+            .route(
+                "/auth/email-verification/request",
+                post(request_email_verification),
+            )
             .route_layer(middleware::from_fn_with_state(
                 self.state.clone(),
                 require_user,
@@ -228,6 +236,12 @@ impl Capability for IdentityCapability {
             .route("/auth/login", post(login))
             .route("/auth/refresh", post(refresh))
             .route("/auth/logout", post(logout))
+            .route(
+                "/auth/email-verification/confirm",
+                post(confirm_email_verification),
+            )
+            .route("/auth/password-reset/request", post(request_password_reset))
+            .route("/auth/password-reset/confirm", post(confirm_password_reset))
             .with_state(self.state.clone())
             .merge(protected)
     }
@@ -327,6 +341,99 @@ struct RefreshRequest {
     refresh_token: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct ActionTokenRequest {
+    token: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct PasswordResetRequest {
+    email: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfirmPasswordResetRequest {
+    token: String,
+    password: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum EmailActionPurpose {
+    VerifyEmail,
+    ResetPassword,
+}
+
+impl EmailActionPurpose {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::VerifyEmail => "verify_email",
+            Self::ResetPassword => "reset_password",
+        }
+    }
+
+    const fn token_prefix(self) -> &'static str {
+        match self {
+            Self::VerifyEmail => "boson_verify_",
+            Self::ResetPassword => "boson_reset_",
+        }
+    }
+}
+
+struct NewEmailAction {
+    id: Uuid,
+    token: String,
+    token_hash: String,
+    purpose: EmailActionPurpose,
+    expires_at: DateTime<Utc>,
+}
+
+impl NewEmailAction {
+    fn generate(purpose: EmailActionPurpose, ttl: Duration) -> Self {
+        let token = format!(
+            "{}{}{}",
+            purpose.token_prefix(),
+            Uuid::new_v4().simple(),
+            Uuid::new_v4().simple()
+        );
+        Self {
+            id: Uuid::now_v7(),
+            token_hash: hash_action_token(&token),
+            token,
+            purpose,
+            expires_at: Utc::now() + ttl,
+        }
+    }
+
+    async fn insert(
+        &self,
+        transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        user_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE identity.email_action_tokens
+             SET consumed_at = now()
+             WHERE user_id = $1 AND purpose = $2 AND consumed_at IS NULL",
+        )
+        .bind(user_id)
+        .bind(self.purpose.as_str())
+        .execute(&mut **transaction)
+        .await?;
+        sqlx::query(
+            "INSERT INTO identity.email_action_tokens
+             (id, user_id, purpose, token_hash, expires_at)
+             VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(self.id)
+        .bind(user_id)
+        .bind(self.purpose.as_str())
+        .bind(&self.token_hash)
+        .bind(self.expires_at)
+        .execute(&mut **transaction)
+        .await?;
+        Ok(())
+    }
+}
+
 async fn register(
     State(state): State<IdentityState>,
     Extension(context): Extension<RequestContext>,
@@ -343,6 +450,10 @@ async fn register(
 
     let user_id = Uuid::now_v7();
     let session = NewSession::generate(state.refresh_ttl_days);
+    let verification = NewEmailAction::generate(
+        EmailActionPurpose::VerifyEmail,
+        Duration::hours(i64::try_from(state.email_verification_ttl_hours).unwrap_or(i64::MAX)),
+    );
     let mut transaction = database.pool().begin().await.map_err(unavailable)?;
     let inserted = sqlx::query(
         "INSERT INTO identity.users (id, email, display_name, password_hash)
@@ -364,10 +475,27 @@ async fn register(
         .insert(&mut transaction, user_id)
         .await
         .map_err(unavailable)?;
+    verification
+        .insert(&mut transaction, user_id)
+        .await
+        .map_err(unavailable)?;
     insert_outbox_event(
         &mut transaction,
         "identity.user_created.v1",
         json!({ "user_id": user_id, "email": email }),
+        Some(context.request_id),
+    )
+    .await
+    .map_err(unavailable)?;
+    insert_outbox_event(
+        &mut transaction,
+        "identity.email_verification_requested.v1",
+        json!({
+            "user_id": user_id,
+            "email": email,
+            "token": verification.token,
+            "expires_at": verification.expires_at
+        }),
         Some(context.request_id),
     )
     .await
@@ -546,6 +674,198 @@ async fn me(
     Ok(Json(user_from_row(&row)?))
 }
 
+async fn request_email_verification(
+    State(state): State<IdentityState>,
+    Extension(user): Extension<AuthenticatedUser>,
+    Extension(context): Extension<RequestContext>,
+) -> Result<StatusCode, IdentityError> {
+    let database = require_database(&state)?;
+    let row = sqlx::query(
+        "SELECT email, email_verified_at
+         FROM identity.users
+         WHERE id = $1 AND disabled_at IS NULL",
+    )
+    .bind(user.user_id)
+    .fetch_optional(database.pool())
+    .await
+    .map_err(unavailable)?
+    .ok_or(IdentityError::Unauthorized)?;
+    if row
+        .try_get::<Option<DateTime<Utc>>, _>("email_verified_at")
+        .map_err(unavailable)?
+        .is_some()
+    {
+        return Ok(StatusCode::NO_CONTENT);
+    }
+    let email: String = row.try_get("email").map_err(unavailable)?;
+    let action = NewEmailAction::generate(
+        EmailActionPurpose::VerifyEmail,
+        Duration::hours(i64::try_from(state.email_verification_ttl_hours).unwrap_or(i64::MAX)),
+    );
+    let mut transaction = database.pool().begin().await.map_err(unavailable)?;
+    action
+        .insert(&mut transaction, user.user_id)
+        .await
+        .map_err(unavailable)?;
+    insert_outbox_event(
+        &mut transaction,
+        "identity.email_verification_requested.v1",
+        json!({
+            "user_id": user.user_id,
+            "email": email,
+            "token": action.token,
+            "expires_at": action.expires_at
+        }),
+        Some(context.request_id),
+    )
+    .await
+    .map_err(unavailable)?;
+    transaction.commit().await.map_err(unavailable)?;
+    Ok(StatusCode::ACCEPTED)
+}
+
+async fn confirm_email_verification(
+    State(state): State<IdentityState>,
+    Extension(context): Extension<RequestContext>,
+    Json(input): Json<ActionTokenRequest>,
+) -> Result<StatusCode, IdentityError> {
+    let database = require_database(&state)?;
+    let mut transaction = database.pool().begin().await.map_err(unavailable)?;
+    let user_id: Uuid = sqlx::query_scalar(
+        "UPDATE identity.email_action_tokens
+         SET consumed_at = now()
+         WHERE token_hash = $1
+           AND purpose = 'verify_email'
+           AND consumed_at IS NULL
+           AND expires_at > now()
+         RETURNING user_id",
+    )
+    .bind(hash_action_token(&input.token))
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(unavailable)?
+    .ok_or(IdentityError::Unauthorized)?;
+    sqlx::query(
+        "UPDATE identity.users
+         SET email_verified_at = COALESCE(email_verified_at, now()),
+             updated_at = now()
+         WHERE id = $1",
+    )
+    .bind(user_id)
+    .execute(&mut *transaction)
+    .await
+    .map_err(unavailable)?;
+    insert_outbox_event(
+        &mut transaction,
+        "identity.email_verified.v1",
+        json!({ "user_id": user_id }),
+        Some(context.request_id),
+    )
+    .await
+    .map_err(unavailable)?;
+    transaction.commit().await.map_err(unavailable)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn request_password_reset(
+    State(state): State<IdentityState>,
+    Extension(context): Extension<RequestContext>,
+    Json(input): Json<PasswordResetRequest>,
+) -> Result<StatusCode, IdentityError> {
+    let email = normalize_email(&input.email)?;
+    let database = require_database(&state)?;
+    let user_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM identity.users
+         WHERE email = $1 AND disabled_at IS NULL",
+    )
+    .bind(&email)
+    .fetch_optional(database.pool())
+    .await
+    .map_err(unavailable)?;
+    // Always return Accepted to prevent account enumeration.
+    let Some(user_id) = user_id else {
+        return Ok(StatusCode::ACCEPTED);
+    };
+    let action = NewEmailAction::generate(
+        EmailActionPurpose::ResetPassword,
+        Duration::minutes(i64::try_from(state.password_reset_ttl_minutes).unwrap_or(i64::MAX)),
+    );
+    let mut transaction = database.pool().begin().await.map_err(unavailable)?;
+    action
+        .insert(&mut transaction, user_id)
+        .await
+        .map_err(unavailable)?;
+    insert_outbox_event(
+        &mut transaction,
+        "identity.password_reset_requested.v1",
+        json!({
+            "user_id": user_id,
+            "email": email,
+            "token": action.token,
+            "expires_at": action.expires_at
+        }),
+        Some(context.request_id),
+    )
+    .await
+    .map_err(unavailable)?;
+    transaction.commit().await.map_err(unavailable)?;
+    Ok(StatusCode::ACCEPTED)
+}
+
+async fn confirm_password_reset(
+    State(state): State<IdentityState>,
+    Extension(context): Extension<RequestContext>,
+    Json(input): Json<ConfirmPasswordResetRequest>,
+) -> Result<StatusCode, IdentityError> {
+    validate_password(&input.password)?;
+    let password_hash = hash_password(&input.password)?;
+    let database = require_database(&state)?;
+    let mut transaction = database.pool().begin().await.map_err(unavailable)?;
+    let user_id: Uuid = sqlx::query_scalar(
+        "UPDATE identity.email_action_tokens
+         SET consumed_at = now()
+         WHERE token_hash = $1
+           AND purpose = 'reset_password'
+           AND consumed_at IS NULL
+           AND expires_at > now()
+         RETURNING user_id",
+    )
+    .bind(hash_action_token(&input.token))
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(unavailable)?
+    .ok_or(IdentityError::Unauthorized)?;
+    sqlx::query(
+        "UPDATE identity.users
+         SET password_hash = $1, updated_at = now()
+         WHERE id = $2 AND disabled_at IS NULL",
+    )
+    .bind(password_hash)
+    .bind(user_id)
+    .execute(&mut *transaction)
+    .await
+    .map_err(unavailable)?;
+    sqlx::query(
+        "UPDATE identity.sessions
+         SET revoked_at = COALESCE(revoked_at, now())
+         WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .execute(&mut *transaction)
+    .await
+    .map_err(unavailable)?;
+    insert_outbox_event(
+        &mut transaction,
+        "identity.password_reset.v1",
+        json!({ "user_id": user_id }),
+        Some(context.request_id),
+    )
+    .await
+    .map_err(unavailable)?;
+    transaction.commit().await.map_err(unavailable)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn require_user(
     State(state): State<IdentityState>,
     request: Request,
@@ -716,6 +1036,10 @@ fn hash_refresh_token(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
 }
 
+fn hash_action_token(token: &str) -> String {
+    hex::encode(Sha256::digest(token.as_bytes()))
+}
+
 fn require_database(state: &IdentityState) -> Result<&Database, IdentityError> {
     state
         .database
@@ -785,6 +1109,8 @@ mod tests {
             jwt_secret: secret.into(),
             access_ttl_seconds: 900,
             refresh_ttl_days: 30,
+            email_verification_ttl_hours: 24,
+            password_reset_ttl_minutes: 60,
         })
     }
 
