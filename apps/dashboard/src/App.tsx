@@ -74,6 +74,12 @@ function Shell({ onDisconnect }: { onDisconnect: () => void }) {
   const health = useAdminQuery<Health>('health', 15_000)
   const session = useAdminQuery<AdminPrincipal>('admin-session', 60_000)
 
+  useEffect(() => {
+    if (session.unauthorized) {
+      onDisconnect()
+    }
+  }, [session.unauthorized, onDisconnect])
+
   return (
     <SidebarProvider>
       <AppSidebar />
