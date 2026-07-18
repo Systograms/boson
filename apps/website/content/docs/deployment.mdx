@@ -1,0 +1,35 @@
+---
+title: Deployment
+description: Packaging the server, worker, and dashboard separately from the website.
+order: 7
+---
+
+Deployment packaging must not leak into application logic. The server and
+worker are containerized from the Rust workspace; the dashboard has its own
+static image. This website deploys independently on Vercel.
+
+## Platform services
+
+```bash
+docker compose up --build
+```
+
+Compose brings up PostgreSQL, the server (with migrations), the worker, and
+the dashboard. Uploaded files and development mail persist in named volumes.
+
+## Website on Vercel
+
+Point a Vercel project at this repository with:
+
+- **Root Directory:** `apps/website`
+- **Framework Preset:** Next.js
+- **Build Command:** `npm run build`
+- **Install Command:** `npm ci`
+
+The marketing/docs site does not depend on the Admin API or Docker Compose.
+
+## Separation of concerns
+
+- Server / worker images ship from `deploy/`
+- Dashboard ships as a static client of the Admin API
+- Website ships as a standalone Next.js app on Vercel

@@ -1,0 +1,36 @@
+---
+title: Configuration
+description: Typed config, local defaults, and redaction.
+order: 4
+---
+
+Configuration is typed in the kernel and loaded from YAML plus environment
+overrides. Secrets are redacted in Admin snapshots and logs.
+
+## Local development
+
+`config/default.yaml` and `config/local.yaml` provide a runnable foundation.
+Database startup can be disabled so the server can be explored without
+PostgreSQL:
+
+```bash
+cargo run -p boson-server
+curl http://localhost:8080/healthz
+```
+
+## Complete local stack
+
+```bash
+docker compose up --build
+```
+
+- Server: `http://localhost:8080`
+- Dashboard: `http://localhost:3000`
+- PostgreSQL: `localhost:5432`
+- Development Admin token: `local-development-token`
+
+## Principles
+
+- Prefer explicit config over magic defaults in production.
+- Never commit production secrets.
+- The Admin API only exposes a redacted configuration snapshot.

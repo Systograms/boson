@@ -1,0 +1,65 @@
+---
+title: Getting started
+description: Scaffold, migrate, and run a standalone Boson app.
+order: 2
+---
+
+Create a standalone Boson application with the CLI, then iterate on a product
+capability using the public Capability SDK.
+
+## Prerequisites
+
+- Rust 1.94+
+- Docker (for local PostgreSQL)
+- A Boson checkout when using path dependencies
+
+## Scaffold an app
+
+From a Boson checkout:
+
+```bash
+cargo run -p boson-cli -- init my-app \
+  --boson-path .
+cd my-app
+```
+
+Or depend on Boson from Git:
+
+```bash
+cargo run -p boson-cli -- init my-app \
+  --boson-git https://github.com/Systograms/boson \
+  --boson-rev main
+```
+
+`boson init` writes a workspace with:
+
+- thin `server`, `worker`, and `migrate` binaries
+- a starter `items` capability
+- Compose Postgres, local config, and `.boson/project.toml`
+
+## Migrate and run
+
+```bash
+boson migrate
+boson dev
+```
+
+`boson migrate` is a narrow operational exception to the CLI's otherwise
+API-only rule: it applies embedded platform migrations plus capability-owned
+SQL. `boson dev` starts Postgres (via Compose), migrates, and launches server
+plus worker.
+
+## Verify
+
+```bash
+boson doctor
+curl http://localhost:8080/healthz
+```
+
+Development Admin token: `local-development-token`.
+
+## Example application
+
+The repository includes a fuller standalone example at `examples/todo` that
+demonstrates authenticated routes, Admin scopes, transactional events, and
+capability migrations.

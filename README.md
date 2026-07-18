@@ -16,7 +16,7 @@ capabilities; billing remains out of scope.
 | `apps/worker` | Background processing and worker heartbeats |
 | `apps/dashboard` | Optional React client of the Admin API |
 | `apps/cli` | Developer and operator client |
-| `apps/docs` | Versioned documentation site |
+| `apps/website` | Marketing site and documentation (Vercel) |
 
 ## Platform crates
 
@@ -76,7 +76,7 @@ Run the web applications:
 
 ```bash
 npm run dev --prefix apps/dashboard
-npm run dev --prefix apps/docs
+npm run dev --prefix apps/website
 ```
 
 ### Complete local stack
@@ -208,13 +208,13 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 npm run build --prefix apps/dashboard
-npm run build --prefix apps/docs
+npm run build --prefix apps/website
 ```
 
 ## Architectural locks
 
 1. PostgreSQL is the system of record.
-2. Server and Worker never depend on Dashboard, CLI, or Docs.
+2. Server and Worker never depend on Dashboard, CLI, or the website.
 3. Dashboard and CLI only use APIs.
 4. Admin and application authorization remain separate.
 5. Capabilities own their schema and do not query another capability's tables.

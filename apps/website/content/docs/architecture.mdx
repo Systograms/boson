@@ -1,0 +1,44 @@
+---
+title: Architecture
+description: How apps, capabilities, and providers fit together.
+order: 3
+---
+
+Boson keeps application logic independent of cloud vendors. Capabilities talk
+to the kernel, ports, and events; adapters wrap provider SDKs at the edge.
+
+## Dependency direction
+
+```text
+generated app → boson-runtime → core capabilities
+generated capability → boson-sdk → capability / ports / events / db helpers
+apps → adapters → vendor SDKs
+
+dashboard / CLI → Admin API → server → providers
+```
+
+Provider SDK types must not appear in capabilities or public contracts.
+Standalone apps depend on `boson-runtime` and `boson-sdk` rather than forking
+the platform repository.
+
+## Layers
+
+| Layer | Responsibility |
+| --- | --- |
+| Apps | HTTP host, worker, dashboard, CLI, website |
+| Runtime / SDK | Shared composition and public extension facade |
+| Capabilities | Identity, orgs, files, jobs, audit, notifications |
+| Kernel / ports / events | Config, contracts, versioned envelopes |
+| Adapters | Storage, queue, mailer, and other providers |
+
+## Architectural locks
+
+1. PostgreSQL is the system of record.
+2. Server and Worker never depend on Dashboard, CLI, or the website.
+3. Dashboard and CLI only use APIs, except `boson migrate` which applies SQL
+   migrations directly as a documented operational exception.
+4. Admin and application authorization remain separate.
+5. Capabilities own their schema and do not query another capability's tables.
+6. Side effects use versioned events and a transactional outbox.
+7. Provider implementations remain behind small ports.
+8. Deployment packaging never leaks into application logic.

@@ -1,0 +1,42 @@
+---
+title: Introduction
+description: What Boson is and why it exists.
+order: 1
+---
+
+Boson is a modular backend platform written in Rust. It combines a production
+server, background worker, operational Admin API, dashboard, CLI, and
+versioned documentation without coupling application logic to cloud providers.
+
+## A backend platform, not another framework
+
+Boson provides stable extension contracts so product capabilities can compose
+cleanly: identity, organizations, file storage, jobs, events, and operational
+visibility ship as first-class platform pieces.
+
+## Stable principles
+
+- Dashboard and CLI are clients of the Admin API.
+- Capabilities own their data and communicate through contracts.
+- Provider SDKs stay behind ports.
+- Operational visibility is part of the platform.
+
+## Run locally
+
+```bash
+cargo run -p boson-server
+cargo run -p boson-cli -- doctor
+npm run dev --prefix apps/dashboard
+```
+
+## Build an app on Boson
+
+```bash
+cargo run -p boson-cli -- init my-app --boson-path .
+cd my-app
+boson migrate
+boson dev
+```
+
+See [Getting started](/docs/getting-started) and the
+[Capability SDK](/docs/extensions) guide.

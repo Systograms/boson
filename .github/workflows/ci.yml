@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        app: [dashboard, docs]
+        app: [dashboard, website]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
