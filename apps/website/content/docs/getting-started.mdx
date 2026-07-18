@@ -60,7 +60,8 @@ boson stop
 ```
 
 `boson doctor` prints specific fixes for missing prerequisites, invalid config,
-occupied ports, and unhealthy infrastructure instead of raw stack traces.
+occupied ports, and an unreachable configured PostgreSQL database instead of
+raw stack traces. It checks connectivity without creating infrastructure.
 
 `boson config` prints the effective configuration as JSON with secrets
 redacted. `boson status` reports service state, ports, health, and versions.

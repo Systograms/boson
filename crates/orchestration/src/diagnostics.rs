@@ -4,6 +4,8 @@ use std::{
     time::Duration,
 };
 
+use boson_db::Database;
+use boson_kernel::DatabaseConfig;
 use tokio::process::Command;
 
 use crate::project::Project;
@@ -68,9 +70,32 @@ pub async fn run(project: &Project) -> Vec<Diagnostic> {
         .await,
     );
 
+    diagnostics.push(check_database(&project.config.database).await);
     diagnostics.push(check_port("server port", project.config.http.port));
 
     diagnostics
+}
+
+async fn check_database(config: &DatabaseConfig) -> Diagnostic {
+    match Database::connect(config).await {
+        Ok(database) => match database.ping().await {
+            Ok(()) => Diagnostic::pass("database", "PostgreSQL connection is healthy"),
+            Err(error) => Diagnostic::fail(
+                "database",
+                format!("connected, but health query failed: {error}"),
+                database_fix(),
+            ),
+        },
+        Err(error) => Diagnostic::fail(
+            "database",
+            format!("PostgreSQL connection failed: {error}"),
+            database_fix(),
+        ),
+    }
+}
+
+fn database_fix() -> &'static str {
+    "verify `database.url` in `.boson/config.yaml` or set `BOSON__DATABASE__URL`; Boson does not start PostgreSQL"
 }
 
 async fn check_command(name: &str, command: &str, args: &[&str], fix: &str) -> Diagnostic {
@@ -109,5 +134,36 @@ fn check_port(name: &str, port: u16) -> Diagnostic {
         }
     } else {
         Diagnostic::pass(name, format!("{port} is available"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::TcpListener;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn database_check_fails_when_configured_postgres_is_unreachable() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let config = DatabaseConfig {
+            url: format!("postgres://boson:boson@127.0.0.1:{port}/boson"),
+            ..DatabaseConfig::default()
+        };
+
+        let diagnostic = check_database(&config).await;
+
+        assert_eq!(diagnostic.name, "database");
+        assert_eq!(diagnostic.level, DiagnosticLevel::Fail);
+        assert!(diagnostic.message.contains("connection failed"));
+        assert!(
+            diagnostic
+                .fix
+                .as_deref()
+                .unwrap()
+                .contains("BOSON__DATABASE__URL")
+        );
     }
 }

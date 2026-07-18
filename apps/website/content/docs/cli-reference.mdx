@@ -74,8 +74,10 @@ Without a service, the command prints recent Server and Worker logs.
 boson doctor
 ```
 
-Checks project discovery, configuration, build tools, and the Server port.
-Failures include a concrete `fix:` instruction.
+Checks project discovery, configuration, build tools, PostgreSQL connectivity,
+and the Server port. The database check opens the configured connection and
+runs a health query; it never creates or alters infrastructure. Failures
+include a concrete `fix:` instruction.
 
 ## `boson config`
 

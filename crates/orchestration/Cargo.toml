@@ -8,6 +8,7 @@ description = "Local lifecycle orchestration for Boson projects"
 
 [dependencies]
 anyhow = "1.0.103"
+boson-db = { version = "0.1.0", path = "../db" }
 boson-kernel = { version = "0.1.0", path = "../kernel" }
 chrono = { version = "0.4.45", features = ["serde"] }
 fs2 = "0.4.3"
