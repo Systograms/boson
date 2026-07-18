@@ -21,8 +21,7 @@ my-app/
 │   └── items/
 │       ├── migrations/
 │       └── src/lib.rs
-├── Cargo.toml
-└── compose.yaml
+└── Cargo.toml
 ```
 
 ## Host applications
@@ -55,8 +54,7 @@ Add product behavior under `capabilities/`. Capabilities depend on
 
 ## Project manifest
 
-`.boson/project.toml` tells the CLI which packages to build and which
-configuration file to load:
+`.boson/project.toml` tells the CLI which packages to build:
 
 ```toml
 schema_version = 1
@@ -65,12 +63,11 @@ package_prefix = "my_app"
 migrate_package = "my_app_migrate"
 server_package = "my_app_server"
 worker_package = "my_app_worker"
-config_path = ".boson/config.yaml"
 ```
 
-The CLI discovers the project by walking upward for this file. Runtime state
-and unified logs are written to ignored `.boson/run` and `.boson/logs`
-directories.
+The CLI discovers the project by walking upward for this file and always loads
+configuration from `.boson/config.yaml`. Runtime state and unified logs are
+written to ignored `.boson/run` and `.boson/logs` directories.
 
 Infrastructure definitions are not part of the generated project. Developers
 connect Boson to infrastructure they own through configuration.

@@ -105,7 +105,6 @@ package_prefix = "{{SNAKE}}"
 migrate_package = "{{MIGRATE_PKG}}"
 server_package = "{{SERVER_PKG}}"
 worker_package = "{{WORKER_PKG}}"
-config_path = ".boson/config.yaml"
 "#;
 
 const WORKSPACE_TOML: &str = r#"[workspace]

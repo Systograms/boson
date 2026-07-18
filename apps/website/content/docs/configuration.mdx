@@ -19,7 +19,7 @@ Every generated project keeps its Boson metadata together:
 └── run/           # generated, ignored
 ```
 
-`project.toml` identifies workspace packages and the project configuration:
+`project.toml` identifies the project and its workspace packages:
 
 ```toml
 schema_version = 1
@@ -28,23 +28,19 @@ package_prefix = "my_app"
 migrate_package = "my_app_migrate"
 server_package = "my_app_server"
 worker_package = "my_app_worker"
-config_path = ".boson/config.yaml"
 ```
 
 Boson discovers this marker by walking upward from the current directory, so
-lifecycle commands work inside nested capability folders too.
+lifecycle commands work inside nested capability folders too. Project
+configuration always lives at `.boson/config.yaml`.
 
 ## Load order
 
 Runtime configuration is merged in this order:
 
 1. Typed platform defaults
-2. The YAML file referenced by `config_path`
+2. `.boson/config.yaml`
 3. `BOSON__` environment variables
-
-If the configured path is missing, Boson still accepts a legacy
-`config/local.yaml` as a fallback. New projects should use
-`.boson/config.yaml`.
 
 Environment keys use double underscores for nesting:
 
@@ -54,8 +50,8 @@ export BOSON__ADMIN__BOOTSTRAP_TOKEN=replace-me
 export BOSON__TELEMETRY__LOG_LEVEL=debug
 ```
 
-`BOSON_CONFIG` can point the runtime at an alternate YAML path when launching
-binaries directly. The CLI uses the project manifest's `config_path`.
+`BOSON_CONFIG` remains a low-level override for launching a runtime binary
+directly. Project-aware CLI commands always use `.boson/config.yaml`.
 
 ## Platform sections
 

@@ -114,6 +114,8 @@ mod tests {
         .unwrap();
         assert!(dest.join(".boson/project.toml").is_file());
         assert!(dest.join(".boson/config.yaml").is_file());
+        let manifest = fs::read_to_string(dest.join(".boson/project.toml")).unwrap();
+        assert!(!manifest.contains("config_path"));
         assert!(!dest.join("config").exists());
         assert!(dest.join("capabilities/items/src/lib.rs").is_file());
         let readme = fs::read_to_string(dest.join("README.md")).unwrap();

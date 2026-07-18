@@ -144,8 +144,12 @@ Admin (Bearer token required):
 Configuration is loaded in this order:
 
 1. Typed defaults
-2. Project YAML file (`.boson/config.yaml`, or `BOSON_CONFIG`)
+2. Canonical project YAML file (`.boson/config.yaml`)
 3. Environment variables prefixed with `BOSON__`
+
+`BOSON_CONFIG` is reserved as a low-level path override when launching a
+runtime binary directly; project-aware CLI commands always use the canonical
+file.
 
 Example:
 

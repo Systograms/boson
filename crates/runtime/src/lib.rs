@@ -67,7 +67,7 @@ impl Default for Builder {
     fn default() -> Self {
         Self {
             config_path: env::var("BOSON_CONFIG")
-                .map_or_else(|_| PathBuf::from("config/local.yaml"), PathBuf::from),
+                .map_or_else(|_| PathBuf::from(".boson/config.yaml"), PathBuf::from),
             core_migrations: None,
             extension: None,
         }

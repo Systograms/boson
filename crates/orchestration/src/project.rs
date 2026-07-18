@@ -18,7 +18,6 @@ pub struct ProjectManifest {
     pub migrate_package: String,
     pub server_package: String,
     pub worker_package: String,
-    pub config_path: PathBuf,
 }
 
 impl Default for ProjectManifest {
@@ -30,7 +29,6 @@ impl Default for ProjectManifest {
             migrate_package: String::new(),
             server_package: String::new(),
             worker_package: String::new(),
-            config_path: PathBuf::from(".boson/config.yaml"),
         }
     }
 }
@@ -109,17 +107,12 @@ impl Project {
         let (root, manifest) = find_project_root(start)?.context(
             "not inside a Boson project\nfix: run `boson init <name>` or change into a project directory",
         )?;
-        let mut config_path = if manifest.config_path.is_absolute() {
-            manifest.config_path.clone()
-        } else {
-            root.join(&manifest.config_path)
-        };
-        if !config_path.exists() {
-            let legacy = root.join("config/local.yaml");
-            if legacy.exists() {
-                config_path = legacy;
-            }
-        }
+        let config_path = root.join(".boson/config.yaml");
+        anyhow::ensure!(
+            config_path.is_file(),
+            "project configuration is missing at {}\nfix: create `.boson/config.yaml` or run `boson init`",
+            config_path.display()
+        );
         let config = PlatformConfig::load(&config_path).with_context(|| {
             format!(
                 "invalid project configuration {}\nfix: run `boson doctor` for details",
@@ -194,5 +187,30 @@ mod tests {
         let (root, manifest) = find_project_root(Some(&nested)).unwrap().unwrap();
         assert_eq!(root, dir.path());
         assert_eq!(manifest.server_package, "demo_server");
+    }
+
+    #[test]
+    fn project_discovery_requires_canonical_config_path() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join(".boson")).unwrap();
+        fs::create_dir_all(dir.path().join("config")).unwrap();
+        fs::write(
+            dir.path().join(PROJECT_MARKER),
+            r#"
+schema_version = 1
+name = "demo"
+config_path = "config/local.yaml"
+"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("config/local.yaml"),
+            "app:\n  name: legacy\n",
+        )
+        .unwrap();
+
+        let error = Project::discover(Some(dir.path())).unwrap_err();
+
+        assert!(error.to_string().contains(".boson/config.yaml"));
     }
 }
