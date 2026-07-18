@@ -119,8 +119,7 @@ mod tests {
         let readme = fs::read_to_string(dest.join("README.md")).unwrap();
         assert!(readme.contains("boson start"));
         assert!(!readme.contains("docker compose"));
-        let compose = fs::read_to_string(dest.join("compose.yaml")).unwrap();
-        assert!(compose.contains("boson-dashboard:0.1.0"));
+        assert!(!dest.join("compose.yaml").exists());
         let cargo = fs::read_to_string(dest.join("apps/server/Cargo.toml")).unwrap();
         assert!(cargo.contains("crates/runtime"));
         let items = fs::read_to_string(dest.join("capabilities/items/Cargo.toml")).unwrap();

@@ -506,7 +506,6 @@ name = "boson-orchestration"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "boson-kernel",
  "chrono",
  "fs2",
@@ -515,7 +514,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
 ]

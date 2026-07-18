@@ -19,10 +19,6 @@ pub struct ProjectManifest {
     pub server_package: String,
     pub worker_package: String,
     pub config_path: PathBuf,
-    pub infrastructure_enabled: bool,
-    pub dashboard_enabled: bool,
-    pub postgres_service: String,
-    pub dashboard_service: String,
 }
 
 impl Default for ProjectManifest {
@@ -35,10 +31,6 @@ impl Default for ProjectManifest {
             server_package: String::new(),
             worker_package: String::new(),
             config_path: PathBuf::from(".boson/config.yaml"),
-            infrastructure_enabled: true,
-            dashboard_enabled: true,
-            postgres_service: "postgres".into(),
-            dashboard_service: "dashboard".into(),
         }
     }
 }
@@ -150,11 +142,6 @@ impl Project {
     #[must_use]
     pub fn logs_dir(&self) -> PathBuf {
         self.root.join(".boson/logs")
-    }
-
-    #[must_use]
-    pub fn compose_path(&self) -> PathBuf {
-        self.root.join("compose.yaml")
     }
 
     #[must_use]

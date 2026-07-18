@@ -5,7 +5,3 @@ migrate_package = "my_api_migrate"
 server_package = "my_api_server"
 worker_package = "my_api_worker"
 config_path = ".boson/config.yaml"
-infrastructure_enabled = true
-dashboard_enabled = true
-postgres_service = "postgres"
-dashboard_service = "dashboard"

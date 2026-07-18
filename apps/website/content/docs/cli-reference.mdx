@@ -26,19 +26,18 @@ Source and framework details remain hidden from the normal command surface.
 boson start
 ```
 
-The command remains attached and performs the complete local startup sequence:
+The command remains attached and performs the application startup sequence:
 
-1. Validate required build tools, managed infrastructure, project identity,
-   ports, and configuration.
-2. Start managed PostgreSQL and Dashboard services.
-3. Wait for infrastructure health.
-4. Build migrate, Server, and Worker packages.
-5. Apply pending platform and capability migrations.
-6. Start Server and Worker processes.
-7. Wait for `/readyz` and the Dashboard.
-8. Stream prefixed logs and supervise process health.
+1. Validate build tools, project identity, ports, and configuration.
+2. Build migrate, Server, and Worker packages.
+3. Connect to the infrastructure declared in configuration.
+4. Apply pending platform and capability migrations.
+5. Start Server and Worker processes.
+6. Wait for `/readyz`.
+7. Stream prefixed logs and supervise process health.
 
-Ctrl+C gracefully stops the stack and preserves persistent data.
+Boson never starts or stops infrastructure. Ctrl+C gracefully stops Boson's
+application processes.
 
 ## `boson stop`
 
@@ -47,8 +46,7 @@ boson stop
 ```
 
 Signals the active foreground supervisor and waits up to ten seconds for
-graceful shutdown. If the state file is stale, Boson reconciles processes,
-stops managed infrastructure, and clears the stale state.
+graceful shutdown. If the state file is stale, Boson reconciles process state.
 
 ## `boson status`
 
@@ -56,8 +54,7 @@ stops managed infrastructure, and clears the stale state.
 boson status
 ```
 
-Reports each service's state, port, health, and Boson version. The list covers
-PostgreSQL, local storage, local mail, Server, Worker, and Dashboard.
+Reports each Boson process or local adapter's state, port, health, and version.
 
 ## `boson logs`
 
@@ -65,12 +62,11 @@ PostgreSQL, local storage, local mail, Server, Worker, and Dashboard.
 boson logs
 boson logs server
 boson logs worker --follow
-boson logs postgres --lines 250
 ```
 
-Without a service, the command prints recent PostgreSQL, Server, Worker, and
-Dashboard logs. `--follow` streams new lines and `--lines` controls the initial
-tail (default: 100).
+Without a service, the command prints recent Server and Worker logs.
+`--follow` streams new lines and `--lines` controls the initial tail
+(default: 100).
 
 ## `boson doctor`
 
@@ -78,9 +74,8 @@ tail (default: 100).
 boson doctor
 ```
 
-Checks project discovery, configuration, build tools, managed infrastructure,
-and local ports. Failures include a concrete `fix:` instruction. Occupied
-ports are warnings because an existing Boson stack may already own them.
+Checks project discovery, configuration, build tools, and the Server port.
+Failures include a concrete `fix:` instruction.
 
 ## `boson config`
 

@@ -14,13 +14,11 @@ static image. This website deploys independently on Vercel.
 boson start
 ```
 
-The CLI uses Docker Compose internally for PostgreSQL and the Dashboard, then
-builds and supervises the project's migrate, Server, and Worker binaries.
-Compose is an implementation detail of local orchestration, not the public
-developer workflow.
+The CLI builds and supervises the project's migrate, Server, and Worker
+binaries. It connects to infrastructure supplied through configuration and
+never creates or stops that infrastructure.
 
 Press Ctrl+C or run `boson stop` from another terminal for graceful shutdown.
-Local PostgreSQL data, uploads, and development mail are preserved.
 
 ## Production boundaries
 
@@ -49,9 +47,8 @@ window.__BOSON_CONFIG__ = { apiUrl: "http://localhost:8080" }
 ```
 
 The Dashboard client reads that value first, then falls back to
-`VITE_BOSON_URL`, then `http://localhost:8080`. Locally, `boson start` manages
-the Dashboard service on port 3000 with this injection. In production, deploy
-the same image and set `BOSON_API_URL` to the Server origin.
+`VITE_BOSON_URL`, then `http://localhost:8080`. Deploy the image in
+developer-owned infrastructure and set `BOSON_API_URL` to the Server origin.
 
 ## Website on Vercel
 

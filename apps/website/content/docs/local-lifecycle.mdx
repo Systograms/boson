@@ -5,30 +5,26 @@ order: 5
 ---
 
 `boson-orchestration` is the private control plane behind the small CLI
-surface. It keeps infrastructure, migrations, process supervision, health
-gates, logs, and shutdown behavior consistent across every Boson project.
+surface. It keeps migrations, process supervision, health gates, logs, and
+shutdown behavior consistent across every Boson project. Infrastructure is
+configured and operated independently by the developer.
 
 ## Startup sequence
 
 ```text
 validate project and tools
           ↓
-start PostgreSQL + Dashboard
-          ↓
-wait for infrastructure health
-          ↓
 build migrate + Server + Worker
           ↓
-apply all pending migrations
+connect to configured infrastructure and migrate
           ↓
 start and health-gate processes
           ↓
 stream logs and supervise
 ```
 
-Infrastructure and Server readiness each have a 60-second health window.
-Startup rolls back managed infrastructure if building, migration, process
-launch, or a health gate fails.
+Server readiness has a 60-second health window. Startup exits without modifying
+infrastructure if building, migration, process launch, or health gating fails.
 
 ## Supervision
 
@@ -44,11 +40,9 @@ Ctrl+C and `boson stop` follow the same shutdown path:
 
 1. Signal Server and Worker.
 2. Allow up to ten seconds for each process to exit.
-3. Stop managed Dashboard and PostgreSQL containers.
-4. Stop log forwarding tasks.
-5. Clear transient lifecycle state.
+3. Clear transient lifecycle state.
 
-PostgreSQL volumes, uploaded files, and local mail remain on disk.
+Infrastructure is never stopped or changed by the lifecycle supervisor.
 
 Graceful process signaling is currently supported on macOS and Linux. Other
 platforms may report that graceful stop is not yet available.
@@ -70,15 +64,13 @@ boson logs server --follow
 ```
 
 If a previous supervisor crashed, the next lifecycle command detects stale
-state. `boson stop` also cleans up orphaned managed infrastructure when the
-recorded supervisor is no longer alive.
+process state.
 
 ## Troubleshooting
 
 | Symptom | What to do |
 | --- | --- |
 | `Boson is already running for this project` | Use `boson status` or `boson logs`; stop with `boson stop` |
-| Docker daemon is not running | Open Docker Desktop and wait until Docker reports ready |
 | Server or Worker exited unexpectedly | Inspect `boson logs server` or `boson logs worker` |
 | Service did not become healthy | Check that service's logs; readiness waits up to 60 seconds |
 | Port already in use | `boson doctor` reports this as a warning; close the owner or stop an existing Boson stack |
@@ -86,7 +78,6 @@ recorded supervisor is no longer alive.
 
 ## Infrastructure boundary
 
-Docker Compose is the current infrastructure backend. The orchestration crate
-hides it behind an `InfrastructureBackend` contract, leaving room for future
-Docker Engine, Podman, or externally managed implementations without changing
-the CLI.
+`boson start` consumes connection details from project configuration. It never
+creates PostgreSQL servers, buckets, mail providers, containers, or clusters.
+Optional development infrastructure remains outside Boson's lifecycle.

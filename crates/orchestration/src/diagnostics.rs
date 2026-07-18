@@ -68,37 +68,7 @@ pub async fn run(project: &Project) -> Vec<Diagnostic> {
         .await,
     );
 
-    if project.manifest.infrastructure_enabled {
-        diagnostics.push(
-            check_command(
-                "docker",
-                "docker",
-                &["info", "--format", "{{.ServerVersion}}"],
-                "install Docker Desktop, open it, and wait for Docker to start",
-            )
-            .await,
-        );
-        if project.compose_path().is_file() {
-            diagnostics.push(Diagnostic::pass(
-                "infrastructure",
-                project.compose_path().display().to_string(),
-            ));
-        } else {
-            diagnostics.push(Diagnostic::fail(
-                "infrastructure",
-                "compose.yaml is missing",
-                "restore compose.yaml or disable managed infrastructure in .boson/project.toml",
-            ));
-        }
-    }
-
-    for (name, port) in [
-        ("postgres port", 5432),
-        ("server port", project.config.http.port),
-        ("dashboard port", 3000),
-    ] {
-        diagnostics.push(check_port(name, port));
-    }
+    diagnostics.push(check_port("server port", project.config.http.port));
 
     diagnostics
 }

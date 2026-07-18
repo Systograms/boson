@@ -4,21 +4,14 @@ use std::{
     net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
     path::Path,
     process::Stdio,
-    sync::Arc,
     time::Duration,
 };
 
 use anyhow::{Context, Result, bail};
 use fs2::FileExt;
-use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::Child,
-    task::JoinHandle,
-    time::{sleep, timeout},
-};
+use tokio::time::{sleep, timeout};
 
 use crate::{
-    infrastructure::{DockerComposeBackend, InfrastructureBackend, InfrastructureStatus},
     process::{
         ManagedProcess, build_packages, ensure_process_started, executable_path, run_migrations,
         spawn_service,
@@ -27,7 +20,6 @@ use crate::{
     state::{LifecycleState, StateStore, UnitKind, UnitState, process_is_alive, read_last_lines},
 };
 
-const INFRA_READY_TIMEOUT: Duration = Duration::from_secs(60);
 const SERVER_READY_TIMEOUT: Duration = Duration::from_secs(60);
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 
@@ -43,40 +35,15 @@ pub struct StatusEntry {
 pub struct LifecycleManager {
     project: Project,
     state_store: StateStore,
-    infrastructure: Option<Arc<dyn InfrastructureBackend>>,
 }
 
 impl LifecycleManager {
     #[must_use]
     pub fn new(project: Project) -> Self {
-        let infrastructure = project.manifest.infrastructure_enabled.then(|| {
-            Arc::new(DockerComposeBackend::new(
-                project.root.clone(),
-                project.compose_path(),
-            )) as Arc<dyn InfrastructureBackend>
-        });
         let state_store = StateStore::new(project.runtime_dir(), project.logs_dir());
         Self {
             project,
             state_store,
-            infrastructure,
-        }
-    }
-
-    /// Creates a manager with an injected infrastructure backend.
-    ///
-    /// This is used by tests and allows future Docker Engine, Podman, or
-    /// externally-managed implementations without changing lifecycle commands.
-    #[must_use]
-    pub fn with_infrastructure(
-        project: Project,
-        infrastructure: Option<Arc<dyn InfrastructureBackend>>,
-    ) -> Self {
-        let state_store = StateStore::new(project.runtime_dir(), project.logs_dir());
-        Self {
-            project,
-            state_store,
-            infrastructure,
         }
     }
 
@@ -106,23 +73,9 @@ impl LifecycleManager {
         }
 
         self.reconcile_stale_state()?;
-        self.state_store.reset_logs(&[
-            "postgres",
-            "dashboard",
-            "server",
-            "worker",
-            "storage",
-            "mail",
-        ])?;
+        self.state_store
+            .reset_logs(&["server", "worker", "storage", "mail"])?;
         self.validate().await?;
-
-        let mut services = Vec::new();
-        if self.project.manifest.infrastructure_enabled {
-            services.push(self.project.manifest.postgres_service.clone());
-            if self.project.manifest.dashboard_enabled {
-                services.push(self.project.manifest.dashboard_service.clone());
-            }
-        }
 
         let mut state = LifecycleState::new(
             self.project.manifest.name.clone(),
@@ -130,54 +83,20 @@ impl LifecycleManager {
         );
         self.prepare_local_resources(&mut state)?;
 
-        let mut infrastructure_logs = Vec::new();
-        if let Some(backend) = &self.infrastructure {
-            println!("[infrastructure] starting managed services");
-            backend.start(&services).await?;
-            for service in &services {
-                let child = backend.spawn_logs(service).await?;
-                infrastructure_logs.push(spawn_infrastructure_log(
-                    service.clone(),
-                    child,
-                    self.state_store.log_path(service),
-                )?);
-            }
-            if let Err(error) = self
-                .wait_for_infrastructure(backend.as_ref(), &services, &mut state)
-                .await
-            {
-                let _ = backend.stop(&services).await;
-                abort_tasks(infrastructure_logs);
-                return Err(error);
-            }
-        }
-
         let packages = [
             self.project.manifest.migrate_package.as_str(),
             self.project.manifest.server_package.as_str(),
             self.project.manifest.worker_package.as_str(),
         ];
-        let target_directory = match build_packages(&self.project.root, &packages).await {
-            Ok(target) => target,
-            Err(error) => {
-                self.rollback_infrastructure(&services, infrastructure_logs)
-                    .await;
-                return Err(error);
-            }
-        };
+        let target_directory = build_packages(&self.project.root, &packages).await?;
         let migrate_executable =
             executable_path(&target_directory, &self.project.manifest.migrate_package);
-        if let Err(error) = run_migrations(
+        run_migrations(
             &migrate_executable,
             &self.project.root,
             &self.project.config_path,
         )
-        .await
-        {
-            self.rollback_infrastructure(&services, infrastructure_logs)
-                .await;
-            return Err(error);
-        }
+        .await?;
 
         let server_log = self.state_store.log_path("server");
         let worker_log = self.state_store.log_path("worker");
@@ -185,22 +104,14 @@ impl LifecycleManager {
             executable_path(&target_directory, &self.project.manifest.server_package);
         let worker_executable =
             executable_path(&target_directory, &self.project.manifest.worker_package);
-        let mut server = match spawn_service(
+        let mut server = spawn_service(
             "server",
             &server_executable,
             &self.project.root,
             &self.project.config_path,
             &server_log,
         )
-        .await
-        {
-            Ok(process) => process,
-            Err(error) => {
-                self.rollback_infrastructure(&services, infrastructure_logs)
-                    .await;
-                return Err(error);
-            }
-        };
+        .await?;
         let mut worker = match spawn_service(
             "worker",
             &worker_executable,
@@ -213,8 +124,6 @@ impl LifecycleManager {
             Ok(process) => process,
             Err(error) => {
                 server.stop(SHUTDOWN_GRACE).await;
-                self.rollback_infrastructure(&services, infrastructure_logs)
-                    .await;
                 return Err(error);
             }
         };
@@ -243,41 +152,27 @@ impl LifecycleManager {
             ensure_process_started(&mut server, Duration::from_millis(750)).await?;
             ensure_process_started(&mut worker, Duration::from_millis(750)).await?;
             self.wait_for_server().await?;
-            if self.project.manifest.dashboard_enabled {
-                self.wait_for_dashboard().await?;
-            }
             Result::<()>::Ok(())
         }
         .await;
         if let Err(error) = startup {
             server.stop(SHUTDOWN_GRACE).await;
             worker.stop(SHUTDOWN_GRACE).await;
-            self.rollback_infrastructure(&services, infrastructure_logs)
-                .await;
             self.state_store.clear()?;
             return Err(error);
         }
 
         println!("[server] {}", self.project.server_url());
         println!("[worker] started");
-        if self.project.manifest.dashboard_enabled {
-            println!("[dashboard] http://localhost:3000");
-        }
         println!("[boson] running · press Ctrl+C to stop");
 
         let supervision = self.supervise(&mut server, &mut worker).await;
         println!("[boson] shutting down");
         server.stop(SHUTDOWN_GRACE).await;
         worker.stop(SHUTDOWN_GRACE).await;
-        if let Some(backend) = &self.infrastructure
-            && let Err(error) = backend.stop(&services).await
-        {
-            eprintln!("[infrastructure] shutdown warning: {error}");
-        }
-        abort_tasks(infrastructure_logs);
         self.state_store.clear()?;
         fs2::FileExt::unlock(&lock_file).ok();
-        println!("[boson] stopped; persistent data was preserved");
+        println!("[boson] stopped");
         supervision
     }
 
@@ -315,16 +210,7 @@ impl LifecycleManager {
         if !cargo.success() {
             bail!("Rust toolchain is unavailable\nfix: run `rustup update`");
         }
-        if let Some(backend) = &self.infrastructure {
-            backend.validate().await?;
-        }
         ensure_port_available(self.project.config.http.port, "server")?;
-        if self.project.manifest.infrastructure_enabled {
-            ensure_port_available(5432, "postgres")?;
-        }
-        if self.project.manifest.dashboard_enabled {
-            ensure_port_available(3000, "dashboard")?;
-        }
         Ok(())
     }
 
@@ -356,50 +242,9 @@ impl LifecycleManager {
         Ok(())
     }
 
-    async fn wait_for_infrastructure(
-        &self,
-        backend: &dyn InfrastructureBackend,
-        services: &[String],
-        state: &mut LifecycleState,
-    ) -> Result<()> {
-        for service in services {
-            backend.wait_ready(service, INFRA_READY_TIMEOUT).await?;
-            println!("[{service}] ready");
-            state.units.push(UnitState {
-                name: service.clone(),
-                kind: UnitKind::Infrastructure,
-                pid: None,
-                port: match service.as_str() {
-                    "postgres" => Some(5432),
-                    "dashboard" => Some(3000),
-                    _ => None,
-                },
-                version: None,
-                log_path: self.state_store.log_path(service),
-            });
-        }
-        self.state_store.save(state)?;
-        Ok(())
-    }
-
     async fn wait_for_server(&self) -> Result<()> {
         let url = format!("{}/readyz", self.project.server_url());
         wait_for_http(&url, SERVER_READY_TIMEOUT, "server").await
-    }
-
-    async fn wait_for_dashboard(&self) -> Result<()> {
-        wait_for_http("http://127.0.0.1:3000", SERVER_READY_TIMEOUT, "dashboard").await
-    }
-
-    async fn rollback_infrastructure(
-        &self,
-        services: &[String],
-        infrastructure_logs: Vec<JoinHandle<()>>,
-    ) {
-        if let Some(backend) = &self.infrastructure {
-            let _ = backend.stop(services).await;
-        }
-        abort_tasks(infrastructure_logs);
     }
 
     fn reconcile_stale_state(&self) -> Result<()> {
@@ -445,43 +290,31 @@ impl LifecycleManager {
                 send_terminate(pid).ok();
             }
         }
-        if let Some(backend) = &self.infrastructure {
-            let services = infrastructure_services(&self.project);
-            backend.stop(&services).await?;
-        }
         self.state_store.clear()?;
-        println!("Removed stale Boson state and stopped managed infrastructure");
+        println!("Removed stale Boson process state");
         Ok(())
     }
 
-    /// Returns reconciled process, infrastructure, port, health, and version status.
+    /// Returns reconciled process, port, health, and version status.
     ///
     /// # Errors
     ///
-    /// Returns an error when lifecycle state or infrastructure status is unreadable.
+    /// Returns an error when lifecycle state is unreadable.
     pub async fn status(&self) -> Result<Vec<StatusEntry>> {
         let state = self.state_store.load()?;
         let mut entries = Vec::new();
         if let Some(state) = state {
             for unit in state.units {
+                if unit.kind == UnitKind::Infrastructure {
+                    continue;
+                }
                 let running = match unit.kind {
                     UnitKind::Process => unit.pid.is_some_and(process_is_alive),
                     UnitKind::LocalResource => true,
-                    UnitKind::Infrastructure => {
-                        if let Some(backend) = &self.infrastructure {
-                            matches!(
-                                backend.status(&unit.name).await?,
-                                InfrastructureStatus::Running
-                            )
-                        } else {
-                            false
-                        }
-                    }
+                    UnitKind::Infrastructure => false,
                 };
                 let health = if unit.name == "server" && running {
                     http_is_healthy(&format!("{}/readyz", self.project.server_url())).await
-                } else if unit.name == "dashboard" && running {
-                    http_is_healthy("http://127.0.0.1:3000").await
                 } else if running {
                     "ready".into()
                 } else {
@@ -496,24 +329,12 @@ impl LifecycleManager {
                 });
             }
         } else {
-            for name in [
-                "postgres",
-                "storage",
-                "mail",
-                "server",
-                "worker",
-                "dashboard",
-            ] {
-                if name == "dashboard" && !self.project.manifest.dashboard_enabled {
-                    continue;
-                }
+            for name in ["storage", "mail", "server", "worker"] {
                 entries.push(StatusEntry {
                     name: name.into(),
                     state: "stopped".into(),
                     port: match name {
-                        "postgres" => Some(5432),
                         "server" => Some(self.project.config.http.port),
-                        "dashboard" => Some(3000),
                         _ => None,
                     },
                     health: "unavailable".into(),
@@ -534,12 +355,7 @@ impl LifecycleManager {
         let names = if let Some(unit) = unit {
             vec![unit.to_owned()]
         } else {
-            vec![
-                "postgres".into(),
-                "server".into(),
-                "worker".into(),
-                "dashboard".into(),
-            ]
+            vec!["server".into(), "worker".into()]
         };
         let mut positions = std::collections::BTreeMap::new();
         for name in &names {
@@ -571,17 +387,6 @@ impl LifecycleManager {
     }
 }
 
-fn infrastructure_services(project: &Project) -> Vec<String> {
-    if !project.manifest.infrastructure_enabled {
-        return Vec::new();
-    }
-    let mut services = vec![project.manifest.postgres_service.clone()];
-    if project.manifest.dashboard_enabled {
-        services.push(project.manifest.dashboard_service.clone());
-    }
-    services
-}
-
 async fn wait_for_http(url: &str, wait: Duration, name: &str) -> Result<()> {
     let client = reqwest::Client::new();
     let started = std::time::Instant::now();
@@ -601,49 +406,6 @@ async fn http_is_healthy(url: &str) -> String {
         Ok(Ok(response)) if response.status().is_success() => "healthy".into(),
         Ok(Ok(response)) => format!("HTTP {}", response.status()),
         _ => "unreachable".into(),
-    }
-}
-
-fn spawn_infrastructure_log(
-    name: String,
-    mut child: Child,
-    log_path: std::path::PathBuf,
-) -> Result<JoinHandle<()>> {
-    let stdout = child.stdout.take().context("capture infrastructure logs")?;
-    let stderr = child
-        .stderr
-        .take()
-        .context("capture infrastructure errors")?;
-    Ok(tokio::spawn(async move {
-        let stdout_task = forward_infrastructure_stream(name.clone(), stdout, log_path.clone());
-        let stderr_task = forward_infrastructure_stream(name, stderr, log_path);
-        let _ = tokio::join!(stdout_task, stderr_task);
-        let _ = child.wait().await;
-    }))
-}
-
-async fn forward_infrastructure_stream<R>(name: String, stream: R, log_path: std::path::PathBuf)
-where
-    R: tokio::io::AsyncRead + Unpin,
-{
-    let Ok(mut log) = tokio::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(log_path)
-        .await
-    else {
-        return;
-    };
-    let mut lines = BufReader::new(stream).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
-        println!("[{name}] {line}");
-        let _ = log.write_all(format!("{line}\n").as_bytes()).await;
-    }
-}
-
-fn abort_tasks(tasks: Vec<JoinHandle<()>>) {
-    for task in tasks {
-        task.abort();
     }
 }
 
@@ -709,35 +471,16 @@ mod tests {
     #[tokio::test]
     async fn stopped_project_reports_expected_units_without_external_tools() {
         let dir = tempdir().unwrap();
-        let mut manifest = ProjectManifest::for_name("demo");
-        manifest.infrastructure_enabled = false;
-        manifest.dashboard_enabled = false;
         let project = Project {
             root: dir.path().to_path_buf(),
-            manifest,
+            manifest: ProjectManifest::for_name("demo"),
             config_path: dir.path().join(".boson/config.yaml"),
             config: PlatformConfig::default(),
         };
-        let entries = LifecycleManager::with_infrastructure(project, None)
-            .status()
-            .await
-            .unwrap();
+        let entries = LifecycleManager::new(project).status().await.unwrap();
         assert!(entries.iter().all(|entry| entry.state == "stopped"));
         assert!(entries.iter().any(|entry| entry.name == "server"));
+        assert!(!entries.iter().any(|entry| entry.name == "postgres"));
         assert!(!entries.iter().any(|entry| entry.name == "dashboard"));
-    }
-
-    #[test]
-    fn managed_services_follow_project_flags() {
-        let dir = tempdir().unwrap();
-        let mut manifest = ProjectManifest::for_name("demo");
-        manifest.dashboard_enabled = false;
-        let project = Project {
-            root: dir.path().to_path_buf(),
-            manifest,
-            config_path: dir.path().join(".boson/config.yaml"),
-            config: PlatformConfig::default(),
-        };
-        assert_eq!(infrastructure_services(&project), vec!["postgres"]);
     }
 }

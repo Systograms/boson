@@ -64,17 +64,14 @@ boson start
 ```
 
 - Server: <http://localhost:8080>
-- Dashboard: <http://localhost:3000>
-- PostgreSQL: `localhost:5432`
 - Development Admin token: `local-development-token`
 
-Boson verifies prerequisites, starts managed infrastructure, waits for health,
-applies pending migrations, builds and starts the Server and Worker, serves the
-Dashboard, and streams prefixed logs. Ctrl+C gracefully stops the complete
-stack while preserving local data.
+Configure infrastructure you own, then run `boson start`. Boson verifies
+configuration, applies pending migrations, builds and starts the Server and
+Worker, waits for health, and streams prefixed logs. Ctrl+C gracefully stops
+Boson's processes; infrastructure remains untouched.
 
-Use `boson status`, `boson logs`, and `boson doctor` when needed. Developers do
-not need to invoke Docker, Cargo, npm, or individual service binaries.
+Use `boson status`, `boson logs`, and `boson doctor` when needed.
 
 ## APIs currently available
 

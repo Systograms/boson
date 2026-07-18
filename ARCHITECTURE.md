@@ -72,10 +72,11 @@ platform contracts.
 ## Local orchestration
 
 `boson-orchestration` is the private local control plane behind the small CLI
-surface. It manages infrastructure, migration binaries, service process
-groups, health gates, lifecycle state, and unified logs. Application binaries
-remain thin `boson-runtime` launchers.
+surface. It manages migration binaries, service process groups, health gates,
+lifecycle state, and unified logs. Application binaries remain thin
+`boson-runtime` launchers. Infrastructure is supplied and operated by the
+developer; Boson only connects to it through configuration.
 
 Developers interact with `boson start`, `stop`, `status`, `logs`, and `doctor`;
-Docker, Cargo, npm, migration commands, and individual services are
+build execution, migration commands, and individual Boson processes are
 implementation details.

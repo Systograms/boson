@@ -19,7 +19,7 @@ Every generated project keeps its Boson metadata together:
 └── run/           # generated, ignored
 ```
 
-`project.toml` identifies workspace packages and local infrastructure:
+`project.toml` identifies workspace packages and the project configuration:
 
 ```toml
 schema_version = 1
@@ -29,8 +29,6 @@ migrate_package = "my_app_migrate"
 server_package = "my_app_server"
 worker_package = "my_app_worker"
 config_path = ".boson/config.yaml"
-infrastructure_enabled = true
-dashboard_enabled = true
 ```
 
 Boson discovers this marker by walking upward from the current directory, so
