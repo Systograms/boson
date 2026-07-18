@@ -796,4 +796,40 @@ mod tests {
         };
         assert!(build_queue(&config, None).is_err());
     }
+
+    #[tokio::test]
+    async fn unknown_storage_provider_fails_closed() {
+        let config = StorageConfig {
+            provider: "gcs".into(),
+            ..StorageConfig::default()
+        };
+        assert!(build_object_store(&config).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn misconfigured_s3_storage_fails_closed() {
+        let config = StorageConfig {
+            provider: "s3".into(),
+            ..StorageConfig::default()
+        };
+        assert!(build_object_store(&config).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn unknown_mail_provider_fails_closed() {
+        let config = MailConfig {
+            provider: "sendgrid".into(),
+            ..MailConfig::default()
+        };
+        assert!(build_mailer(&config).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn smtp_mailer_without_host_fails_closed() {
+        let config = MailConfig {
+            provider: "smtp".into(),
+            ..MailConfig::default()
+        };
+        assert!(build_mailer(&config).await.is_err());
+    }
 }

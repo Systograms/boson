@@ -1,7 +1,7 @@
 //! S3-compatible implementation of [`boson_ports::ObjectStore`].
 //!
-//! Works with AWS S3 and S3-compatible services such as MinIO. Requests are
-//! signed locally with SigV4 (via `rusty-s3`) and executed over HTTPS with
+//! Works with AWS S3 and S3-compatible services such as `MinIO`. Requests are
+//! signed locally with `SigV4` (via `rusty-s3`) and executed over HTTPS with
 //! `reqwest`/rustls, keeping the adapter lightweight and Sans-IO testable:
 //! configuration validation, key validation, and URL signing never touch the
 //! network.
